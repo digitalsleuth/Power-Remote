@@ -109,7 +109,7 @@ echo "<colgroup><col/></colgroup>" >> "$strPath"
     }
 echo "</table></body></html>" >> "$strPath"
     }
-GetBasicInfo $hostname
+#GetBasicInfo $hostname
 
 #Applications
 function GetApplications($hostname) {
@@ -117,7 +117,7 @@ Write-Host ""
 Write-Host "Getting Installed software for $hostname"
 Get-WmiObject -Class Win32_Product -ComputerName $hostname | select Name,InstallDate,ProductID,Vendor,Version | Export-CSV -Path "$export_directory\$hostname-applications.csv" -NoTypeInformation
     }
-GetApplications $hostname
+#GetApplications $hostname
 
 #Event Log Info - 4624, 4625, 4634, 4698, 4699, 4700, 4701, 4702
 function GetSecurityLogs($hostname){
@@ -155,7 +155,7 @@ $get4634 = (Get-WmiObject Win32_NtLogEvent -ComputerName $hostname | Where {$_.l
 $get4698_4702 = (Get-WmiObject Win32_NtLogEvent -ComputerName $hostname | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4698' -or $_.EventCode -eq '4699' -or $_.EventCode -eq '4700' -or $_.EventCode -eq '4701' -or $_.EventCode -eq '4702'} | select $TimeGenerated, EventIdentifier, $SID98_02, $accountname98_02, $loginid98_02, $exec98_02 | Export-CSV -Path "$export_directory\$hostname-4698-4702.csv" -NoTypeInformation)
 $get4624, $get4625, $get4634, $get4698_4702
     }
-GetSecurityLogs $hostname
+#GetSecurityLogs $hostname
 
 #Event Logs - System - 6005 and 6006
 function GetSystemLogs($hostname) {
@@ -164,7 +164,7 @@ Write-Host "Gathering System Event Logs for ID 6005 and 6005"
 $get6005_6006 = (Get-WmiObject Win32_NTLogEvent -ComputerName $hostname | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '6005' -or $_.EventCode -eq '6006'} | select $TimeGenerated, EventCode | Export-CSV -Path "$export_directory\$hostname-6005-6006.csv" -NoTypeInformation)
 $get6005_6006
     }
-GetSystemLogs $hostname
+#GetSystemLogs $hostname
 
 #Processes
 function GetProcesses($hostname){
@@ -173,7 +173,7 @@ Write-Host "Gathering Running Processes on $hostname"
 $CreationDate = @{n="CreationDate";e={$_.ConvertToDateTime($_.CreationDate)}}
 Get-WmiObject Win32_Process -ComputerName $hostname | select Name,Description,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$hostname-processes.csv" -NoTypeInformation
     }
-GetProcesses $hostname
+#GetProcesses $hostname
 
 #Services
 function GetServices($hostname){
@@ -181,7 +181,7 @@ Write-Host ""
 Write-Host "Gathering Services on $hostname"
 Get-WmiObject Win32_Service -ComputerName $hostname | select Name,ProcessID,StartMode,State,Status,PathName | export-CSV -Path "$export_directory\$hostname-services.csv" -NoTypeInformation
     }
-GetServices $hostname
+#GetServices $hostname
 
 function GetHostArtifacts($hostname){
 Write-Host ""
@@ -219,7 +219,7 @@ start-sleep -s 5
     $usbcsv -replace "PSChildName","Serial Number" >> "$export_directory\$hostname-basicinfo.html"
     Write-Host "Host-based artifact acquisition complete"
     }
-GetHostArtifacts $hostname
+#GetHostArtifacts $hostname
 
 function GetMemoryDump($hostname){
 Write-Host "Getting Memory Dump of $hostname"
@@ -244,7 +244,7 @@ Write-Host "Removing memory dump from host"
 Remove-Item ($net_path + "memory.raw") -Force
 Write-Host "Memory acquisition complete"
     }
-GetMemoryDump $hostname
+#GetMemoryDump $hostname
 
 function GetWirelessInfo($hostname){
 Write-Host ""
@@ -258,7 +258,7 @@ Copy-Item ($net_path + "wireless.txt") "$export_directory\$hostname-wireless.txt
 Remove-Item ($net_path + "wireless.txt") #>
 Write-Host "Wireless Profile acquisition complete"
     }
-GetWirelessInfo $hostname
+#GetWirelessInfo $hostname
 
 function GetAppCompat($hostname){
 Write-Host ""
