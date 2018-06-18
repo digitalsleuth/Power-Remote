@@ -184,7 +184,6 @@ Get-WmiObject Win32_Service -ComputerName $hostname | select Name,ProcessID,Star
 GetServices $hostname
 
 function GetHostArtifacts($hostname){
-CheckExportDir
 Write-Host ""
 Write-Host "Retrieving specific host-based artifacts from $hostname"
 $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt','usb.csv')
