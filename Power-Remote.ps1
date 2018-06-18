@@ -184,41 +184,49 @@ Get-WmiObject Win32_Service -ComputerName $hostname | select Name,ProcessID,Star
 GetServices $hostname
 
 function GetHostArtifacts($hostname){
+CheckExportDir
 Write-Host ""
-Write-Host "Gathering specific host-based artifacts from $hostname"
+Write-Host "Retrieving specific host-based artifacts from $hostname"
 $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt','usb.csv')
-$outnet = ("$export_directory\$hostname-netstat.txt")
-$outtasks = ("$export_directory\$hostname-tasklist.txt")
-$outtasksvc = ("$export_directory\$hostname-tasksvc.txt")
-$outscquery = ("$export_directory\$hostname-scquery.txt")
-$outipconfig = ("$export_directory\$hostname-ipconfig.txt")
-$outdns = ("$export_directory\$hostname-dns.txt")
-$outroute = ("$export_directory\$hostname-route.txt")
-$outarp = ("$export_directory\$hostname-arp.txt")
-$outsched = ("$export_directory\$hostname-sched.txt")
-$outusb = ("$export_directory\$hostname-usb.csv")
-
+$driveLetter = (gwmi win32_operatingsystem -ComputerName $hostname | select -expandproperty SystemDrive) + "\"
+$outnet = ($driveLetter + ”netstat.txt”)
+$outtasks = ($driveLetter + ”tasklist.txt")
+$outtasksvc = ($driveLetter + ”tasksvc.txt")
+$outscquery = ($driveLetter + ”scquery.txt")
+$outipconfig = ($driveLetter + ”ipconfig.txt")
+$outdns = ($driveLetter + ”dns.txt")
+$outroute = ($driveLetter + ”route.txt")
+$outarp = ($driveLetter + ”arp.txt")
+$outsched = ($driveLetter + ”sched.txt")
+$outusb = ($driveLetter + ”usb.csv")
+$powershell = ($driveLetter + "windows\system32\WindowsPowerShell\v1.0\powershell.exe")
+$shell = "cmd /c " + $driveLetter + "windows\system32\"
     
 $artifacts = @{ netstat = ("netstat.exe -ano >> $outnet"); tasklist = "tasklist.exe /v >> $outtasks"; tasksvc = "tasklist.exe /svc >> $outtasksvc"; scquery = "sc.exe query state= all >> $outscquery"; ipconfig = "ipconfig.exe /all >> $outipconfig"; dns = "ipconfig.exe /displaydns >> $outdns"; route = "route.exe PRINT >> $outroute"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"; usb = ("$powershell -command Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR\*\* | select FriendlyName,PSChildName | ConvertTo-CSV -NoTypeInformation >> $outusb") }
 
-Try{
+    Try{
     foreach($key in $artifacts.Keys){
     $invokeArtifacts = (Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $hostname -ErrorAction stop)
     Write-Host " -$key"
     }
     $invokeUSB = (Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($artifacts.usb) -ComputerName $hostname -ErrorAction stop)
     }
-Catch{
-#
+    Catch{
+
     Throw $_
     Break
     }
 start-sleep -s 5
-    Write-Host "Saving artifacts to export directory"
-    $usbcsv = (Import-CSV -Path ("$export_directory\$hostname-usb.csv") | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" )
+    Write-Host "Copying artifacts to export directory"
+    foreach($file in $fileList){
+        Copy-Item ($net_path + $file) "$export_directory\$hostname-$file" -Force
+        Write-Host "Removing $file from host"
+        Remove-Item ($net_path + $file) -Force
+        }
+    $usbcsv = (Import-CSV -Path ”$export_directory\$hostname-usb.csv” | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" )
     $usbcsv -replace "PSChildName","Serial Number" >> "$export_directory\$hostname-basicinfo.html"
     Write-Host "Host-based artifact acquisition complete"
-    }
+}
 GetHostArtifacts $hostname
 
 function GetMemoryDump($hostname){
