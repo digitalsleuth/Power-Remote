@@ -28,7 +28,13 @@ This tool will require you have the winpmem executable from Rekall renamed to wi
 
 Script and functions can be executed in one of two ways:
 
-.\Power-Remote.psm1 (or function name) "<hostname/IP>"
-.\Power-Remote.psm1 (or function name) -hostname "<hostname/IP>"
+Functions:
+Import-Module <path_to>Power-Remote.psm1
+<function> -ComputerName <computername/IP>
+RemoteRunAll -ComputerName <computername/IP> (this will run all functions against the host)
+  
+Script:
+.\Power-Remote.ps1 "<computername/IP>"
+.\Power-Remote.ps1 -ComputerName "<computername/IP>"
 
 More features to follow, as you will see in the code.
