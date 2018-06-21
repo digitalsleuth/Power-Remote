@@ -64,6 +64,7 @@ TD{border: 1px solid black; padding: 5px;}</style>
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}},
     $TimeWritten = @{n="TimeWritten";e={$_.ConvertToDateTime($_.TimeWritten)}},
     $reg = (Get-WMIObject -List -NameSpace "root\default" -ComputerName $ComputerName -Credential $Credential | Where-Object {$_.Name -eq "StdRegProv"})
+
     <#
     If($format = csv{
         $outputFormat = (Export-CSV -NoTypeInformation $export_directory\$ComputerName-<>+ "." + $format)
@@ -77,13 +78,28 @@ TD{border: 1px solid black; padding: 5px;}</style>
     #>
     )
 
+function Write-ProgressHelper #Borrowed from https://www.adamtheautomator.com/building-progress-bar-powershell-scripts/
+{
+   param (
+      [int]$StepNumber,
+ 
+      [string]$StatusMessage
+   )
+Write-Progress -Activity 'Processing...' -Status $StatusMessage -PercentComplete (($StepNumber / $steps) * 100)
+
+}
+
+$script:steps = ([System.Management.Automation.PsParser]::Tokenize((gc "$PSScriptRoot\$($MyInvocation.MyCommand.Name)"), [ref]$null) | where { $_.Type -eq 'Command' -and $_.Content -eq 'Write-ProgressHelper' }).Count
+$stepCounter = 0
+
 function CheckExportDir() {
 #Check to see if the directory we want to export to exists and, if not, create it.
+#Create a log file in this directory as well to track forensic acquisition
     $location = (get-location)
     $export_directory = "$location\$ComputerName"
     $testFolder = (test-path $export_directory)
     $makeFolder = (New-Item -ItemType Directory -Force -Path $export_directory | Out-Null)
-    if (!($testFolder)) {Write-Host ""; Write-Host "Export directory $export_directory does not exist - creating...";
+    if (!($testFolder)) {Write-ProgressHelper -StatusMessage "Export directory $export_directory does not exist - creating..." -StepNumber ($stepCounter++);
         $makeFolder
         }
 }
@@ -93,11 +109,11 @@ function RemoteRunAll($ComputerName){
     $location = (get-location)
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Running All Functions against $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
     $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteMemoryDump','Get-RemoteWirelessInfo','Get-RemoteAppCompat')
     foreach ($func in $functions){ 
-    Write-Progress -Activity "Starting function" -Status "Running $func"
+    Write-ProgressHelper -StatusMessage "Starting function" -StepNumber ($stepCounter++)
     & $func $ComputerName
     }
 }
@@ -114,8 +130,8 @@ function Get-RemotePCInfo($ComputerName) {
     }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Gathering basic host information for $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Gathering basic host information for $ComputerName" -StepNumber ($stepCounter++)
     $ReportTitle="Basic PC Information"
     $strPath = "$export_directory\$ComputerName-basicinfo.html"
     $pcsystemType = @{ 0="Unspecified"; 1="Desktop";2="Mobile";3="Workstation";4="Enterprise Server";5="Small Office and Home Office (SOHO) Server";6="Appliance PC";7="Performance Server";8="Maximum" }
@@ -151,8 +167,8 @@ function Get-RemoteApplications($ComputerName) {
 #Use the Win32_Product Class to grab all software installed by standard methods
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Installed software for $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Installed software for $ComputerName" -StepNumber ($stepCounter++)
     Get-WmiObject Win32_Product -ComputerName $ComputerName -Credential $Credential | select Name,InstallDate,ProductID,Vendor,Version | Export-CSV -Path "$export_directory\$ComputerName-applications.csv" -NoTypeInformation
 }
 
@@ -161,8 +177,8 @@ function Get-RemoteAuditStatus($ComputerName){
 #Check the Windows Security event log for 4624 and 4625 events
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Successful/Failed Logon attempts on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Successful/Failed Logon attempts on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $logontype4624 = @{n="LogonType";e={($_.InsertionStrings[8])}}
     $SID4624 = @{n="SID";e={$_.InsertionStrings[4]}}
@@ -187,8 +203,8 @@ function Get-RemoteAccountLogoff($ComputerName){
 #Check Windows Security event log for 4634 events, all types
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Logoffs on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Logoffs on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
     $SID = @{n="SID";e={$_.InsertionStrings[0]}}
@@ -203,8 +219,8 @@ function Get-RemoteTaskEvents($ComputerName){
 #Check the Windows Security event log for all new and modified scheduled tasks 
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for New and Modified Scheduled Tasks on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for New and Modified Scheduled Tasks on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
     $SID = @{n="SID";e={$_.InsertionStrings[0]}}
@@ -220,8 +236,8 @@ function Get-RemoteAuditLog($ComputerName) {
 #Check Windows Security event log for event ID 1102, when the audit log is cleared
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Audit Clearing on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Audit Clearing on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $SID = @{n="SID";e={$_.InsertionStrings[0]}}
     $user = @{n="User";e={$_.InsertionStrings[1]}}
@@ -235,8 +251,8 @@ function Get-RemoteUserEvents($ComputerName) {
 #Check Windows Security event log for any added or deleted, accounts or computers
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Added/Deleted Accounts/Computers on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Added/Deleted Accounts/Computers on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
     $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
@@ -253,8 +269,8 @@ function Get-RemoteUserChanges($ComputerName) {
 #Check Windows Security event log for 4738, changed accounts or computers
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Changed Accounts/Computers on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Changed Accounts/Computers on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[1]}}
     $ModifiedDomain = @{n="Modified Acct Domain";e={$_.InsertionStrings[2]}}
@@ -275,8 +291,8 @@ function Get-RemotePasswordEvents($ComputerName) {
 #Check Windows Security event log for password changes or resets
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Password Changes/Resets on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Password Changes/Resets on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
     $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
@@ -293,8 +309,8 @@ function Get-RemoteGroupEvents($ComputerName) {
 #Check Windows Security event log for groups that have been created, deleted or modified
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Groups Created/Deleted/Modified on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Groups Created/Deleted/Modified on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $MemberAccount = @{n="Member Account";e={$_.InsertionStrings[0]}}
     $MemberSID = @{n="Member SID";e={$_.InsertionStrings[1]}}
@@ -314,8 +330,8 @@ function Get-RemoteGroupChanges($ComputerName) {
 #Check Windows Security event log for additions to, deletions from, or changes to groups
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Add/Delete/Change to Groups on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Add/Delete/Change to Groups on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $GroupName = @{n="Group Name";e={$_.InsertionStrings[0]}}
     $GroupDomain = @{n="Group Domain";e={$_.InsertionStrings[1]}}
@@ -333,8 +349,8 @@ function Get-RemoteRunAs($ComputerName) {
 #Check Windows Security event log for any attempts to run applications as another user
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for RunAs attempts on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for RunAs attempts on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
     $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
@@ -356,8 +372,8 @@ function Get-RemoteSpecialPriv($ComputerName) {
 #Check the Windows Security event log for any accounts using Special Privileges
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Security Event Logs for Special Privileges on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Special Privileges on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
     $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
@@ -373,8 +389,8 @@ function Get-RemoteSRPBlock($ComputerName) {
 #Check Windows Application event log for any software that was blocked by the Windows Software Restriction Policy
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Application Event Logs for Software Restriction Policy on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Application Event Logs for Software Restriction Policy on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     #Need Sample of SRP event to determine format for output
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
@@ -386,8 +402,8 @@ function Get-RemotePowerEvents($ComputerName) {
 #Check Windows System event log for any physical power events (off/on/reboot/dirty shutdown)
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking System Event Logs for Startup/PowerOff/Reboot/Dirty Shutdown on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking System Event Logs for Startup/PowerOff/Reboot/Dirty Shutdown on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName -Credential $Credential | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '6005' -or $_.EventCode -eq '6006' -or $_.EventCode -eq '6008'} | select $TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation
 }
@@ -397,8 +413,8 @@ function Get-RemoteSvcStatusEvents($ComputerName) {
 #Check Windows System log for service modifications (start/stop/restart/run)
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking System Event Logs for Service Start/Stop/Restart/Running on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking System Event Logs for Service Start/Stop/Restart/Running on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $TimeWritten = @{n="TimeWritten";e={$_.ConvertToDateTime($_.TimeWritten)}}
     $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
@@ -411,8 +427,8 @@ function Get-RemoteSvcInstallsEvents($ComputerName) {
 #Check Windows System event log for services that were installed
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking System Event Logs for Service Installs on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking System Event Logs for Service Installs on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
     $ServiceFileName = @{n="Service File Name";e={$_.InsertionStrings[1]}}
@@ -427,8 +443,8 @@ function Get-RemoteRDPEvents($ComputerName) {
 #Check Microsoft-Windows-TerminalServices-LocalSessionManager/Operational for RDP Events
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking for RDP Events on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking for RDP Events on $ComputerName" -StepNumber ($stepCounter++)
     $domain = @{n="domain";e={((($_.Message -split '\n')[2] -replace "\r","" -split " ")[1] -split "\\")[0] }}
     $user = @{n="User";e={((($_.Message -split '\n')[2] -replace "\r","" -split " ")[1] -split "\\")[1] }}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
@@ -442,8 +458,8 @@ function Get-RemoteProcesses($ComputerName){
 #Get the current running processes on the remote host
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Running Processes on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Running Processes on $ComputerName" -StepNumber ($stepCounter++)
     $CreationDate = @{n="CreationDate";e={$_.ConvertToDateTime($_.CreationDate)}}
     Get-WmiObject Win32_Process -ComputerName $ComputerName -Credential $Credential | select Name,Description,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$ComputerName-processes.csv" -NoTypeInformation
 }
@@ -453,8 +469,8 @@ function Get-RemoteServicesActive($ComputerName){
 #Get a list of active running services on the remote host
     $export_directory = "$location\$ComputerName"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Services on $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Checking Services on $ComputerName" -StepNumber ($stepCounter++)
     Get-WmiObject Win32_Service -ComputerName $ComputerName -Credential $Credential | select Name,ProcessID,StartMode,State,Status,PathName | export-CSV -Path "$export_directory\$ComputerName-services.csv" -NoTypeInformation
 }
 
@@ -464,8 +480,8 @@ function Get-RemoteArtifacts($ComputerName){
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$\"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Retrieving specific host-based artifacts from $ComputerName"
+    
+    Write-ProgressHelper -StatusMessage "Retrieving specific host-based artifacts from $ComputerName" -StepNumber ($stepCounter++)
     $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt','usb.csv')
     $outnet = ($driveLetter + ”netstat.txt”)
     $outtasks = ($driveLetter + ”tasklist.txt")
@@ -484,7 +500,7 @@ function Get-RemoteArtifacts($ComputerName){
     Try{
     foreach($key in $artifacts.Keys){
         Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $ComputerName -Credential $Credential -ErrorAction stop | Out-Null
-        Write-Host " -$key"
+        Write-ProgressHelper -StatusMessage " -$key"
     }
     Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($artifacts.usb) -ComputerName $ComputerName -Credential $Credential -ErrorAction stop | Out-Null
     }
@@ -493,17 +509,17 @@ function Get-RemoteArtifacts($ComputerName){
         Break
     }
     
-    Write-Host "Copying artifacts to export directory"
+    Write-ProgressHelper -StatusMessage "Copying artifacts to export directory" -StepNumber ($stepCounter++)
     foreach($file in $fileList){
         Start-Sleep -s 2
         Copy-Item ($net_path + $file) "$export_directory\$ComputerName-$file" -Force
-        Write-Host "Removing $file from host"
+        Write-ProgressHelper -StatusMessage "Removing $file from host"
         Remove-Item ($net_path + $file) -Force
         }
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
     $usbcsv = (Import-CSV -Path ”$export_directory\$ComputerName-usb.csv” | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" )
     $usbcsv -replace "PSChildName","Serial Number" >> "$export_directory\$ComputerName-basicinfo.html"
-    Write-Host "Host-based artifact acquisition complete"
+    Write-ProgressHelper -StatusMessage "Host-based artifact acquisition complete" -StepNumber ($stepCounter++)
 }
 
 function Get-RemoteWirelessInfo($ComputerName){
@@ -512,16 +528,16 @@ function Get-RemoteWirelessInfo($ComputerName){
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$\"
     CheckExportDir
-    Write-Host ""
-    Write-Host "Checking Host Wireless Profiles"
+    
+    Write-ProgressHelper -StatusMessage "Checking Host Wireless Profiles" -StepNumber ($stepCounter++)
     $outWireless = ($driveLetter + "wireless.txt")
     $wireless = "netsh.exe wlan show profiles name='*' >> $outWireless"
     Invoke-WmiMethod -Class win32_process -name Create -ArgumentList ($shell + $wireless) -ComputerName $ComputerName -Credential $Credential -ErrorAction stop | Out-Null
     Start-Sleep -s 10
     Copy-Item ($net_path + "wireless.txt") "$export_directory\$ComputerName-wireless.txt" -Force
-    Write-Progress "Removing $outWireless from host"
+    Write-ProgressHelper -StatusMessage "Removing $outWireless from host" -StepNumber ($stepCounter++)
     Remove-Item ($net_path + "wireless.txt") -Force
-    Write-Host "Wireless Profile acquisition complete"
+    Write-ProgressHelper -StatusMessage "Wireless Profile acquisition complete" -StepNumber ($stepCounter++)
 }
 
 function Get-RemoteAppCompat($ComputerName){
@@ -530,8 +546,8 @@ function Get-RemoteAppCompat($ComputerName){
 # Added Win10-CreatorsUpdate partial support (0x34)
 $export_directory = "$location\$ComputerName"
 CheckExportDir
-Write-Host ""
-Write-Host "Checking AppCompatCache on $ComputerName"
+
+Write-ProgressHelper -StatusMessage "Checking AppCompatCache on $ComputerName" -StepNumber ($stepCounter++)
 $reg = (Get-WMIObject -List -NameSpace "root\default" -ComputerName $ComputerName -Credential $Credential | Where-Object {$_.Name -eq "StdRegProv"})
 
 #Get AppCompatCache from Registry
@@ -555,8 +571,7 @@ if ($AppCompatCache -ne $null) {
 
 		# 0x30 - Windows 10
 		"30000000" { 
-            Write-Output "!!!!!!!!!!"
-			$MemoryStream.Position = 48
+            $MemoryStream.Position = 48
 			
 			# Complete loop to parse each entry
 			while ($MemoryStream.Position -lt $MemoryStream.Length) {
@@ -579,8 +594,7 @@ if ($AppCompatCache -ne $null) {
 		}
         # 0x34 - Windows 10
 		"34000000" { 
-            Write-Output "!!!!!!!!!!"
-			$MemoryStream.Position = 52
+            $MemoryStream.Position = 52
 			
 			# Complete loop to parse each entry
 			while ($MemoryStream.Position -lt $MemoryStream.Length) {
@@ -838,7 +852,7 @@ function Get-RemoteMemoryDump($ComputerName){
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$\"
     CheckExportDir
-    Write-Host "Getting Memory Dump of $ComputerName"
+    Write-ProgressHelper -StatusMessage "Getting Memory Dump of $ComputerName" -StepNumber ($stepCounter++)
     Try {
         Copy-Item -Path "$location\bin\winpmem.exe" -Destination ($net_path + "winpmem.exe") -Force
         $invokeMemDump = (Invoke-WmiMethod -Class win32_process -name Create -ArgumentList ($net_path + "winpmem.exe --format raw -o " + $driveLetter + "memory.raw") -ComputerName $ComputerName -Credential $Credential -ErrorAction stop)
@@ -852,13 +866,13 @@ function Get-RemoteMemoryDump($ComputerName){
     while ($null -ne (& $memdumpRunning)) {
     start-sleep -s 2
     }
-    Write-Host "Removing winpmem executable from host"
+    Write-ProgressHelper -StatusMessage "Removing winpmem executable from host"
     Remove-Item ($net_path + "winpmem.exe") -Force
-    Write-Host "Copying memory dump to export directory"
+    Write-ProgressHelper -StatusMessage "Copying memory dump to export directory"
     Copy-Item ($net_path + "memory.raw") "$export_directory\$ComputerName-memory.raw"
-    Write-Host "Removing memory dump from host"
+    Write-ProgressHelper -StatusMessage "Removing memory dump from host"
     Remove-Item ($net_path + "memory.raw") -Force
-    Write-Host "Memory acquisition complete"
+    Write-ProgressHelper -StatusMessage "Memory acquisition complete" -StepNumber ($stepCounter++)
 }
 
 Export-ModuleMember -function Get-Remote*
