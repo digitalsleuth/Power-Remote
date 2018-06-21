@@ -74,16 +74,18 @@ TD{border: 1px solid black; padding: 5px;}</style>
     )
 
 function CheckExportDir() {
-$location = (get-location)
-$export_directory = "$location\$ComputerName"
-$testFolder = (test-path $export_directory)
-$makeFolder = (New-Item -ItemType Directory -Force -Path $export_directory | Out-Null)
-if (!($testFolder)) {Write-Host ""; Write-Host "Export directory $export_directory does not exist - creating...";
-    $makeFolder
-    }
+#Check to see if the directory we want to export to exists and, if not, create it.
+    $location = (get-location)
+    $export_directory = "$location\$ComputerName"
+    $testFolder = (test-path $export_directory)
+    $makeFolder = (New-Item -ItemType Directory -Force -Path $export_directory | Out-Null)
+    if (!($testFolder)) {Write-Host ""; Write-Host "Export directory $export_directory does not exist - creating...";
+        $makeFolder
+        }
 }
 
 function RemoteRunAll($ComputerName){
+#Run all functions against the target 
     $location = (get-location)
     $export_directory = "$location\$ComputerName"
     CheckExportDir
@@ -91,432 +93,432 @@ function RemoteRunAll($ComputerName){
     Write-Host "Running All Functions against $ComputerName"
     $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteMemoryDump','Get-RemoteWirelessInfo','Get-RemoteAppCompat')
     foreach ($func in $functions){ 
+    Write-Progress -Activity "Starting function" -Status "Running $func"
     & $func $ComputerName
     }
 }
+Set-Alias rra RemoteRunAll
+Export-ModuleMember -Function RemoteRunAll -alias rra
 
 #Basic Info
 function Get-RemotePCInfo($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Gathering basic host information for $ComputerName"
-$ReportTitle="Basic PC Information"
-$strPath = "$export_directory\$ComputerName-basicinfo.html"
-$pcsystemType = @{ 0="Unspecified"; 1="Desktop";2="Mobile";3="Workstation";4="Enterprise Server";5="Small Office and Home Office (SOHO) Server";6="Appliance PC";7="Performance Server";8="Maximum" }
-$get_type = ([int](gwmi win32_computersystem -ComputerName $ComputerName | select -ExpandProperty PCSystemType))
-$installDate = @{n="Install Date";e={$_.ConvertToDateTime($_.installdate)}}
-$oemkey = "SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation"
-$regnames = $reg.EnumValues($regkey.HKEY_LOCAL_MACHINE, $oemkey).sNames
-ConvertTo-Html -Head $htmlHeader -Title $ReportTitle -Body "<h1> Computer Name : $ComputerName </h1>" > "$strPath"  
-Get-WmiObject win32_computersystem -ComputerName $ComputerName|select PSComputerName,Name,Manufacturer,Domain,Model,Systemtype,PrimaryOwnerName,@{n="PC System Type";e={$pcsystemType.$get_type}},PartOfDomain,CurrentTimeZone,BootupState | ConvertTo-Html  -Head $htmlHeader -Body "<h5>Created on: $(Get-Date)</h5><h2>ComputerSystem</h2>" >> "$strPath" 
-Get-WmiObject win32_bios -ComputerName $ComputerName| select Status,Version,PrimaryBIOS,Manufacturer,@{n="Release Date";e={$_.ConvertToDateTime($_.releasedate)}},SerialNumber | ConvertTo-Html -Head $htmlHeader -Body "<h2>BIOS Information</h2>" >> "$strPath" 
-Get-WmiObject win32_Useraccount -ComputerName $ComputerName | where {$_.localaccount -Match 'True'} | select Name,SID,Description,Fullname,Disabled | ConvertTo-html -Head $htmlHeader -Body "<h2>Local Users</h2>" >> "$strPath" 
-((Get-WmiObject win32_groupuser -ComputerName $ComputerName |? {$_.groupcomponent -like '*"Administrators"'} |% {$_.partcomponent -match ".+Domain\=(.+)\,Name\=(.+)$" > $nul; $matches[1].trim('"') + "\" + $matches[2].trim('"') }) -split " " | Select @{n="Administrators";e={$_.Trim()}} | ConvertTo-HTML -Head $htmlHeader -Body "<h2>Administrators</h2>") -replace "\*","Administrators" >> "$strPath"
-Get-WmiObject win32_DiskDrive -ComputerName $ComputerName | Select Index,Model,Caption,SerialNumber,Description,MediaType,FirmwareRevision,Partitions,@{Expression={$_.Size /1Gb -as [int]};Label="Total Size(GB)"},PNPDeviceID | Sort-Object -Property Index | ConvertTo-Html -Head $htmlHeader -Body "<h2>Disk Drive Information</h1>" >> "$strPath" 
-Get-WmiObject win32_networkadapter -ComputerName $ComputerName | Select Name,Manufacturer,Description,AdapterType,Speed,MACAddress,NetConnectionID,PNPDeviceID | ConvertTo-Html -Head $htmlHeader -Body "<h2>Network Adapter Information</h2>" >> "$strPath" 
-Get-WmiObject win32_NetworkAdapterConfiguration -ComputerName $ComputerName | select @{n='IP Address';e={$_.ipaddress}},Description,@{n='MAC Address';e={$_.macaddress}},DHCPenabled,@{n="DHCPLeaseObtained";e={$_.ConvertToDateTime($_.DHCPLeaseObtained)}} | ConvertTo-html  -Head $htmlHeader -Body "<h2>Network Adapter Configuration</h2>" >> "$strPath" 
-Get-WmiObject win32_startupCommand -ComputerName $ComputerName | select Name,Location,Command,User,Caption  | ConvertTo-html  -Head $htmlHeader -Body "<h2>Startup  Software Information</h2>" >> "$strPath" 
-Get-WmiObject win32_logicalDisk -ComputerName $ComputerName | select DeviceID,VolumeName,@{Expression={$_.Size /1Gb -as [int]};Label="Total Size(GB)"},@{Expression={$_.Freespace / 1Gb -as [int]};Label="Free Size (GB)"},FileSystem, VolumeSerialNumber |  ConvertTo-html  -Head $htmlHeader -Body "<h2>Disk Information</h2>" >> "$strPath" 
-Get-WmiObject win32_operatingsystem -ComputerName $ComputerName | select Caption,OSArchitecture,Organization,$InstallDate,Version,SerialNumber,BootDevice,WindowsDirectory,CountryCode,@{n="Last Bootup";e={$_.ConvertToDateTime($_.lastbootup)}},@{n="Local Date/Time";e={$_.ConvertToDateTime($_.LocalDateTime)}} | ConvertTo-html  -Head $htmlHeader -Body "<h2>OS Information</h2>" >> "$strPath" 
+#Grab numerous pieces of information about the host to establish basic details for reference
+#Output to HTML file
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Gathering basic host information for $ComputerName"
+    $ReportTitle="Basic PC Information"
+    $strPath = "$export_directory\$ComputerName-basicinfo.html"
+    $pcsystemType = @{ 0="Unspecified"; 1="Desktop";2="Mobile";3="Workstation";4="Enterprise Server";5="Small Office and Home Office (SOHO) Server";6="Appliance PC";7="Performance Server";8="Maximum" }
+    $get_type = ([int](gwmi win32_computersystem -ComputerName $ComputerName | select -ExpandProperty PCSystemType))
+    $installDate = @{n="Install Date";e={$_.ConvertToDateTime($_.installdate)}}
+    $oemkey = "SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation"
+    $regnames = $reg.EnumValues($regkey.HKEY_LOCAL_MACHINE, $oemkey).sNames
+    ConvertTo-Html -Head $htmlHeader -Title $ReportTitle -Body "<h1> Computer Name : $ComputerName </h1>" > "$strPath"  
+    Get-WmiObject win32_computersystem -ComputerName $ComputerName|select PSComputerName,Name,Manufacturer,Domain,Model,Systemtype,PrimaryOwnerName,@{n="PC System Type";e={$pcsystemType.$get_type}},PartOfDomain,CurrentTimeZone,BootupState | ConvertTo-Html  -Head $htmlHeader -Body "<h5>Created on: $(Get-Date)</h5><h2>ComputerSystem</h2>" >> "$strPath" 
+    Get-WmiObject win32_bios -ComputerName $ComputerName| select Status,Version,PrimaryBIOS,Manufacturer,@{n="Release Date";e={$_.ConvertToDateTime($_.releasedate)}},SerialNumber | ConvertTo-Html -Head $htmlHeader -Body "<h2>BIOS Information</h2>" >> "$strPath" 
+    Get-WmiObject win32_Useraccount -ComputerName $ComputerName | where {$_.localaccount -Match 'True'} | select Name,SID,Description,Fullname,Disabled | ConvertTo-html -Head $htmlHeader -Body "<h2>Local Users</h2>" >> "$strPath" 
+    ((Get-WmiObject win32_groupuser -ComputerName $ComputerName |? {$_.groupcomponent -like '*"Administrators"'} |% {$_.partcomponent -match ".+Domain\=(.+)\,Name\=(.+)$" > $nul; $matches[1].trim('"') + "\" + $matches[2].trim('"') }) -split " " | Select @{n="Administrators";e={$_.Trim()}} | ConvertTo-HTML -Head $htmlHeader -Body "<h2>Administrators</h2>") -replace "\*","Administrators" >> "$strPath"
+    Get-WmiObject win32_DiskDrive -ComputerName $ComputerName | Select Index,Model,Caption,SerialNumber,Description,MediaType,FirmwareRevision,Partitions,@{Expression={$_.Size /1Gb -as [int]};Label="Total Size(GB)"},PNPDeviceID | Sort-Object -Property Index | ConvertTo-Html -Head $htmlHeader -Body "<h2>Disk Drive Information</h1>" >> "$strPath" 
+    Get-WmiObject win32_networkadapter -ComputerName $ComputerName | Select Name,Manufacturer,Description,AdapterType,Speed,MACAddress,NetConnectionID,PNPDeviceID | ConvertTo-Html -Head $htmlHeader -Body "<h2>Network Adapter Information</h2>" >> "$strPath" 
+    Get-WmiObject win32_NetworkAdapterConfiguration -ComputerName $ComputerName | select @{n='IP Address';e={$_.ipaddress}},Description,@{n='MAC Address';e={$_.macaddress}},DHCPenabled,@{n="DHCPLeaseObtained";e={$_.ConvertToDateTime($_.DHCPLeaseObtained)}} | ConvertTo-html  -Head $htmlHeader -Body "<h2>Network Adapter Configuration</h2>" >> "$strPath" 
+    Get-WmiObject win32_startupCommand -ComputerName $ComputerName | select Name,Location,Command,User,Caption  | ConvertTo-html  -Head $htmlHeader -Body "<h2>Startup  Software Information</h2>" >> "$strPath" 
+    Get-WmiObject win32_logicalDisk -ComputerName $ComputerName | select DeviceID,VolumeName,@{Expression={$_.Size /1Gb -as [int]};Label="Total Size(GB)"},@{Expression={$_.Freespace / 1Gb -as [int]};Label="Free Size (GB)"},FileSystem, VolumeSerialNumber |  ConvertTo-html  -Head $htmlHeader -Body "<h2>Disk Information</h2>" >> "$strPath" 
+    Get-WmiObject win32_operatingsystem -ComputerName $ComputerName | select Caption,OSArchitecture,Organization,$InstallDate,Version,SerialNumber,BootDevice,WindowsDirectory,CountryCode,@{n="Last Bootup";e={$_.ConvertToDateTime($_.lastbootup)}},@{n="Local Date/Time";e={$_.ConvertToDateTime($_.LocalDateTime)}} | ConvertTo-html  -Head $htmlHeader -Body "<h2>OS Information</h2>" >> "$strPath" 
 
-$htmlHeader >> "$strPath"
-echo "<br/><h2>OEM Information</h2>" >> "$strPath"
-echo "<table>" >> "$strPath"
-echo "<colgroup><col/></colgroup>" >> "$strPath"
+    $htmlHeader >> "$strPath"
+    echo "<br/><h2>OEM Information</h2>" >> "$strPath"
+    echo "<table>" >> "$strPath"
+    echo "<colgroup><col/></colgroup>" >> "$strPath"
     foreach($name in $regnames){
-    $values = $reg.GetStringValue($regkey.HKEY_LOCAL_MACHINE, $oemkey, $name); 
-    ("<tr><th>" + $name + "</th></tr><tr><td>"+ $values.sValue + "</td></tr>") >> "$strPath"
-    }
-    echo "</table></body></html>" >> "$strPath"
-    }
+        $values = $reg.GetStringValue($regkey.HKEY_LOCAL_MACHINE, $oemkey, $name); 
+        ("<tr><th>" + $name + "</th></tr><tr><td>"+ $values.sValue + "</td></tr>") >> "$strPath"
+        }
+        echo "</table></body></html>" >> "$strPath"
+        }
 
 #Applications
 function Get-RemoteApplications($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Installed software for $ComputerName"
-Get-WmiObject -Class Win32_Product -ComputerName $ComputerName | select Name,InstallDate,ProductID,Vendor,Version | Export-CSV -Path "$export_directory\$ComputerName-applications.csv" -NoTypeInformation
+#Use the Win32_Product Class to grab all software installed by standard methods
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Installed software for $ComputerName"
+    Get-WmiObject Win32_Product -ComputerName $ComputerName | select Name,InstallDate,ProductID,Vendor,Version | Export-CSV -Path "$export_directory\$ComputerName-applications.csv" -NoTypeInformation
 }
 
 #Security Event Logs - 4624 and 4625
 function Get-RemoteAuditStatus($ComputerName){
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Successful/Failed Logon attempts on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$logontype4624 = @{n="LogonType";e={($_.InsertionStrings[8])}}
-$SID4624 = @{n="SID";e={$_.InsertionStrings[4]}}
-$accountname4624 = @{n="AccountName";e={$_.InsertionStrings[5]}}
-$loginid4624 = @{n="LoginID";e={$_.InsertionStrings[7]}}
-$sourcenetwork4624 = @{n="SourceNetworkAddress";e={$_.InsertionStrings[18]}}
+#Check the Windows Security event log for 4624 and 4625 events
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Successful/Failed Logon attempts on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $logontype4624 = @{n="LogonType";e={($_.InsertionStrings[8])}}
+    $SID4624 = @{n="SID";e={$_.InsertionStrings[4]}}
+    $accountname4624 = @{n="AccountName";e={$_.InsertionStrings[5]}}
+    $loginid4624 = @{n="LoginID";e={$_.InsertionStrings[7]}}
+    $sourcenetwork4624 = @{n="SourceNetworkAddress";e={$_.InsertionStrings[18]}}
 
-$logontype4625 = @{n="LogonType";e={$_.InsertionStrings[10]}}
-$SID4625 = @{n="SID";e={$_.InsertionStrings[4]}}
-$accountname4625 = @{n="AccountName";e={$_.InsertionStrings[5]}}
-$failuretype4625 = @{n="FailureType";e={$_.InsertionStrings[7]}}
-$failuresubtype4625 = @{n="FailureSubType";e={$_.InsertionStrings[9]}}
-$workstationname4625 = @{n="WorkstationName";e={$_.InsertionStrings[13]}}
-$sourcenetwork4625 = @{n="SourceNetworkAddress";e={$_.InsertionStrings[19]}}
+    $logontype4625 = @{n="LogonType";e={$_.InsertionStrings[10]}}
+    $SID4625 = @{n="SID";e={$_.InsertionStrings[4]}}
+    $accountname4625 = @{n="AccountName";e={$_.InsertionStrings[5]}}
+    $failuretype4625 = @{n="FailureType";e={$_.InsertionStrings[7]}}
+    $failuresubtype4625 = @{n="FailureSubType";e={$_.InsertionStrings[9]}}
+    $workstationname4625 = @{n="WorkstationName";e={$_.InsertionStrings[13]}}
+    $sourcenetwork4625 = @{n="SourceNetworkAddress";e={$_.InsertionStrings[19]}}
 
-$get4624 = (Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4624'} | select $TimeGenerated, EventIdentifier, $logontype4624, $SID4624, $accountname4624, $loginid4624, $sourcenetwork4624 | Export-CSV -Path "$export_directory\$ComputerName-4624.csv" -NoTypeInformation)
-$get4625 = (Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4625'} | select $TimeGenerated, EventIdentifier, $logontype4625, $SID4625, $accountname4625, $failuretype4625, $failuresubtype4625, $workstationname4625, $sourcenetwork4625 | Export-CSV -Path "$export_directory\$ComputerName-4625.csv" -NoTypeInformation)
-$get4624, $get4625
+    Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4624'} | select $TimeGenerated, EventIdentifier, $logontype4624, $SID4624, $accountname4624, $loginid4624, $sourcenetwork4624 | Export-CSV -Path "$export_directory\$ComputerName-4624.csv" -NoTypeInformation
+    Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4625'} | select $TimeGenerated, EventIdentifier, $logontype4625, $SID4625, $accountname4625, $failuretype4625, $failuresubtype4625, $workstationname4625, $sourcenetwork4625 | Export-CSV -Path "$export_directory\$ComputerName-4625.csv" -NoTypeInformation
 }
 
 #Security Event Log Info - 4634
 function Get-RemoteAccountLogoff($ComputerName){
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Logoffs on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
-$SID = @{n="SID";e={$_.InsertionStrings[0]}}
-$accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
-$loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
+#Check Windows Security event log for 4634 events, all types
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Logoffs on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
+    $SID = @{n="SID";e={$_.InsertionStrings[0]}}
+    $accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
+    $loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
 
-$getLogoff = (Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4634'} | select $TimeGenerated, EventIdentifier, Type, $logofftype, $SID, $accountname, $loginid | Export-CSV -Path "$export_directory\$ComputerName-4634.csv" -NoTypeInformation)
-$getLogoff
+    Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4634'} | select $TimeGenerated, EventIdentifier, Type, $logofftype, $SID, $accountname, $loginid | Export-CSV -Path "$export_directory\$ComputerName-4634.csv" -NoTypeInformation
 }
 
 #Security Event Logs - 4698 - 4702
 function Get-RemoteTaskEvents($ComputerName){
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for New and Modified Scheduled Tasks on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
-$SID = @{n="SID";e={$_.InsertionStrings[0]}}
-$accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
-$loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
-$exec = @{n="Exec";e={$_.InsertionStrings[5] -replace "`r`n", "" -Match "<Exec>\s{0,}(.*)</Exec"}}
+#Check the Windows Security event log for all new and modified scheduled tasks 
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for New and Modified Scheduled Tasks on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
+    $SID = @{n="SID";e={$_.InsertionStrings[0]}}
+    $accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
+    $loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
+    $exec = @{n="Exec";e={$_.InsertionStrings[5] -replace "`r`n", "" -Match "<Exec>\s{0,}(.*)</Exec"}}
 
-$getTasks = (Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4698' -or $_.EventCode -eq '4699' -or $_.EventCode -eq '4700' -or $_.EventCode -eq '4701' -or $_.EventCode -eq '4702'} | select $TimeGenerated, EventIdentifier, $SID, $accountname, $loginid, $exec | Export-CSV -Path "$export_directory\$ComputerName-4698-4702.csv" -NoTypeInformation)
-$getTasks
+    Get-WmiObject Win32_NtLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4698' -or $_.EventCode -eq '4699' -or $_.EventCode -eq '4700' -or $_.EventCode -eq '4701' -or $_.EventCode -eq '4702'} | select $TimeGenerated, EventIdentifier, $SID, $accountname, $loginid, $exec | Export-CSV -Path "$export_directory\$ComputerName-4698-4702.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 1102
 function Get-RemoteAuditLog($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Audit Clearing on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$SID = @{n="SID";e={$_.InsertionStrings[0]}}
-$user = @{n="User";e={$_.InsertionStrings[1]}}
-$CompName = @{n="Computer Name";e={$_.InsertionStrings[2]}}
-$logonID = @{n="Logon ID";e={$_.InsertionStrings[3]}}
-$getAuditLog = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '1102'} | select $TimeGenerated, EventCode, $User, $SID, $CompName, $logonID, Type | Export-CSV -Path "$export_directory\$ComputerName-1102.csv" -NoTypeInformation)
-$getAuditLog
+#Check Windows Security event log for event ID 1102, when the audit log is cleared
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Audit Clearing on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $SID = @{n="SID";e={$_.InsertionStrings[0]}}
+    $user = @{n="User";e={$_.InsertionStrings[1]}}
+    $CompName = @{n="Computer Name";e={$_.InsertionStrings[2]}}
+    $logonID = @{n="Logon ID";e={$_.InsertionStrings[3]}}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '1102'} | select $TimeGenerated, EventCode, $User, $SID, $CompName, $logonID, Type | Export-CSV -Path "$export_directory\$ComputerName-1102.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4720, 4722, 4725, 4726, 4738, 4741, 4743
 function Get-RemoteUserEvents($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Added/Deleted Accounts/Computers on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
-$ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[2]}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[3]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[4]}}
-$OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getUserEvents = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4720' -or $_.EventCode -eq '4722' -or $_.EventCode -eq '4725' -or $_.EventCode -eq '4726' -or $_.EventCode -eq '4738' -or $_.EventCode -eq '4741' -or $_.EventCode -eq '4743'} | select $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userevents.csv" -NoTypeInformation)
-$getUserEvents
+#Check Windows Security event log for any added or deleted, accounts or computers
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Added/Deleted Accounts/Computers on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
+    $ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[2]}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[3]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[4]}}
+    $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4720' -or $_.EventCode -eq '4722' -or $_.EventCode -eq '4725' -or $_.EventCode -eq '4726' -or $_.EventCode -eq '4738' -or $_.EventCode -eq '4741' -or $_.EventCode -eq '4743'} | select $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userevents.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4738
 function Get-RemoteUserChanges($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Changed Accounts/Computers on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[1]}}
-$ModifiedDomain = @{n="Modified Acct Domain";e={$_.InsertionStrings[2]}}
-$ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[3]}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[4]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[5]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[6]}}
-$OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[7]}}
-#UAC Is a Bitwise Value which determines users permissions. REF: https://docs.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4720
-$OldUAC =  @{n="Old UAC";e={$_.InsertionStrings[21]}}
-$NewUAC =  @{n="New UAC";e={$_.InsertionStrings[22]}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getUserChanges = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4738'} | select $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $ModifiedDomain, $OldUAC, $NewUAC, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userchanges.csv" -NoTypeInformation)
-$getUserChanges
+#Check Windows Security event log for 4738, changed accounts or computers
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Changed Accounts/Computers on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[1]}}
+    $ModifiedDomain = @{n="Modified Acct Domain";e={$_.InsertionStrings[2]}}
+    $ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[3]}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[4]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[5]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[6]}}
+    $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[7]}}
+    #UAC Is a Bitwise Value which determines users permissions. REF: https://docs.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4720
+    $OldUAC =  @{n="Old UAC";e={$_.InsertionStrings[21]}}
+    $NewUAC =  @{n="New UAC";e={$_.InsertionStrings[22]}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4738'} | select $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $ModifiedDomain, $OldUAC, $NewUAC, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userchanges.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4723, 4724
 function Get-RemotePasswordEvents($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Password Changes/Resets on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
-$ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[2]}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[3]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[4]}}
-$OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getPasswordEvents = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4723' -or $_.EventCode -eq '4724'} | select $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-passwordevents.csv" -NoTypeInformation)
-$getPasswordEvents
+#Check Windows Security event log for password changes or resets
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Password Changes/Resets on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
+    $ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[2]}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[3]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[4]}}
+    $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4723' -or $_.EventCode -eq '4724'} | select $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-passwordevents.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4727, 4730, 4731, 4734
 function Get-RemoteGroupEvents($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Groups Created/Deleted/Modified on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$MemberAccount = @{n="Member Account";e={$_.InsertionStrings[0]}}
-$MemberSID = @{n="Member SID";e={$_.InsertionStrings[1]}}
-$MemberGroup = @{n="Member Group";e={$_.InsertionStrings[2]}}
-$GroupDomain = @{n="Group Domain";e={$_.InsertionStrings[3]}}
-$GroupSID = @{n="Group SID";e={$_.InsertionStrings[4]}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[5]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[6]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[7]}}
-$OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[8]}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getGroupEvents = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4727' -or $_.EventCode -eq '4730' -or $_.EventCode -eq '4731' -or $_.EventCode -eq '4734'} | select $TimeGenerated, EventCode, $MemberAccount, $MemberSID, $MemberGroup, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupevents.csv" -NoTypeInformation)
-$getGroupEvents
+#Check Windows Security event log for groups that have been created, deleted or modified
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Groups Created/Deleted/Modified on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $MemberAccount = @{n="Member Account";e={$_.InsertionStrings[0]}}
+    $MemberSID = @{n="Member SID";e={$_.InsertionStrings[1]}}
+    $MemberGroup = @{n="Member Group";e={$_.InsertionStrings[2]}}
+    $GroupDomain = @{n="Group Domain";e={$_.InsertionStrings[3]}}
+    $GroupSID = @{n="Group SID";e={$_.InsertionStrings[4]}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[5]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[6]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[7]}}
+    $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[8]}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4727' -or $_.EventCode -eq '4730' -or $_.EventCode -eq '4731' -or $_.EventCode -eq '4734'} | select $TimeGenerated, EventCode, $MemberAccount, $MemberSID, $MemberGroup, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupevents.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4728, 4729, 4732, 4733, 4735
 function Get-RemoteGroupChanges($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Add/Delete/Change to Groups on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$GroupName = @{n="Group Name";e={$_.InsertionStrings[0]}}
-$GroupDomain = @{n="Group Domain";e={$_.InsertionStrings[1]}}
-$GroupSID = @{n="Group SID";e={$_.InsertionStrings[2]}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[3]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[4]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[5]}}
-$OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[6]}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getGroupChanges = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4728' -or $_.EventCode -eq '4729' -or $_.EventCode -eq '4732' -or $_.EventCode -eq '4733' -or $_.EventCode -eq '4735'} | select $TimeGenerated, EventCode, $GroupName, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupchanges.csv" -NoTypeInformation)
-$getGroupChanges
+#Check Windows Security event log for additions to, deletions from, or changes to groups
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Add/Delete/Change to Groups on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $GroupName = @{n="Group Name";e={$_.InsertionStrings[0]}}
+    $GroupDomain = @{n="Group Domain";e={$_.InsertionStrings[1]}}
+    $GroupSID = @{n="Group SID";e={$_.InsertionStrings[2]}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[3]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[4]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[5]}}
+    $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[6]}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4728' -or $_.EventCode -eq '4729' -or $_.EventCode -eq '4732' -or $_.EventCode -eq '4733' -or $_.EventCode -eq '4735'} | select $TimeGenerated, EventCode, $GroupName, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupchanges.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4648
 function Get-RemoteRunAs($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for RunAs attempts on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[2]}}
-$OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[3]}}
-$OriginatingLogonGUID = @{n="Originating Logon GUID";e={$_.InsertionStrings[4]}}
-$TargetUser = @{n="Target Username";e={$_.InsertionStrings[5]}}
-$TargetDomain = @{n="Target Domain";e={$_.InsertionStrings[6]}}
-$TargetGUID = @{n="Target Logon GUID";e={$_.InsertionStrings[7]}}
-$TargetServer = @{n="Target Server Name";e={$_.InsertionStrings[8]}}
-$ProcessID = @{n="Process ID";e={[int64]$_.InsertionStrings[10]}}
-$ProcessName = @{n="Process Name";e={$_.InsertionStrings[11]}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getRunAs = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4648'}| select $TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $OriginatingLogonGUID, $TargetUser, $TargetDomain, $TargetGUID, $TargetServer, $ProcessID, $ProcessName, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-runas.csv" -NoTypeInformation)
-$getRunAs
+#Check Windows Security event log for any attempts to run applications as another user
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for RunAs attempts on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[2]}}
+    $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[3]}}
+    $OriginatingLogonGUID = @{n="Originating Logon GUID";e={$_.InsertionStrings[4]}}
+    $TargetUser = @{n="Target Username";e={$_.InsertionStrings[5]}}
+    $TargetDomain = @{n="Target Domain";e={$_.InsertionStrings[6]}}
+    $TargetGUID = @{n="Target Logon GUID";e={$_.InsertionStrings[7]}}
+    $TargetServer = @{n="Target Server Name";e={$_.InsertionStrings[8]}}
+    $ProcessID = @{n="Process ID";e={[int64]$_.InsertionStrings[10]}}
+    $ProcessName = @{n="Process Name";e={$_.InsertionStrings[11]}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4648'}| select $TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $OriginatingLogonGUID, $TargetUser, $TargetDomain, $TargetGUID, $TargetServer, $ProcessID, $ProcessName, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-runas.csv" -NoTypeInformation
 }
 
 #Event Logs - Security - 4672
 function Get-RemoteSpecialPriv($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Security Event Logs for Special Privileges on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
-$OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
-$AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[2]}}
-$OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[3]}}
-$Privileges = @{n="Privileges";e={$_.InsertionStrings[4] -replace '\n','' -replace '\t\t\t',';'}}
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getPrivs = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4672'}| select $TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $Privileges, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-privevents.csv" -NoTypeInformation)
-$getPrivs
+#Check the Windows Security event log for any accounts using Special Privileges
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Security Event Logs for Special Privileges on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
+    $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
+    $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[2]}}
+    $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[3]}}
+    $Privileges = @{n="Privileges";e={$_.InsertionStrings[4] -replace '\n','' -replace '\t\t\t',';'}}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Security"} | Where-Object {$_.EventCode -eq '4672'}| select $TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $Privileges, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-privevents.csv" -NoTypeInformation
 }
 
 #Event Logs - System - 866
 function Get-RemoteSRPBlock($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Application Event Logs for Software Restriction Policy on $ComputerName"
-$TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-#Need Sample of SRP event to determine format for output
-$message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
-$getSRPBlocks = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Application"} | Where-Object {$_.EventCode -eq '866'} | select * | Export-CSV -Path "$export_directory\$ComputerName-srp.csv" -NoTypeInformation)
-$getSRPBlocks
+#Check Windows Application event log for any software that was blocked by the Windows Software Restriction Policy
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Application Event Logs for Software Restriction Policy on $ComputerName"
+    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    #Need Sample of SRP event to determine format for output
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "Application"} | Where-Object {$_.EventCode -eq '866'} | select * | Export-CSV -Path "$export_directory\$ComputerName-srp.csv" -NoTypeInformation
 }
 
 #Event Logs - System - 6005-6006, 6008
 function Get-RemotePowerEvents($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking System Event Logs for Startup/PowerOff/Reboot/Dirty Shutdown on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$getPowerEvents = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '6005' -or $_.EventCode -eq '6006' -or $_.EventCode -eq '6008'} | select $TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation)
-$getPowerEvents
+#Check Windows System event log for any physical power events (off/on/reboot/dirty shutdown)
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking System Event Logs for Startup/PowerOff/Reboot/Dirty Shutdown on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '6005' -or $_.EventCode -eq '6006' -or $_.EventCode -eq '6008'} | select $TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation
 }
 
 #Event Logs - System - 7036
 function Get-RemoteSvcStatusEvents($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking System Event Logs for Service Start/Stop/Restart/Running on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$TimeWritten = @{n="TimeWritten";e={$_.ConvertToDateTime($_.TimeWritten)}}
-$ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
-$ServiceStatus = @{n="Service Status";e={$_.InsertionStrings[1]}}
-$getServiceEvents = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '7036'} | select $TimeGenerated, EventCode, $ServiceName, $ServiceStatus, ComputerName | Export-CSV -Path "$export_directory\$ComputerName-7036.csv" -NoTypeInformation)
-$getServiceEvents
+#Check Windows System log for service modifications (start/stop/restart/run)
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking System Event Logs for Service Start/Stop/Restart/Running on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $TimeWritten = @{n="TimeWritten";e={$_.ConvertToDateTime($_.TimeWritten)}}
+    $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
+    $ServiceStatus = @{n="Service Status";e={$_.InsertionStrings[1]}}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '7036'} | select $TimeGenerated, EventCode, $ServiceName, $ServiceStatus, ComputerName | Export-CSV -Path "$export_directory\$ComputerName-7036.csv" -NoTypeInformation
 }
 
 #Event Logs - System - 7045
 function Get-RemoteSvcInstallsEvents($ComputerName) {
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking System Event Logs for Service Installs on $ComputerName"
-$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
-$ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
-$ServiceFileName = @{n="Service File Name";e={$_.InsertionStrings[1]}}
-$ServiceType = @{n="Service Type";e={$_.InsertionStrings[2]}}
-$ServiceStartType = @{n="Service Start Type";e={$_.InsertionStrings[3]}}
-$user = @{n="User";e={($_.User -split '\\')[1]}}
-$getServiceInstalls = (Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '7045'} | select $TimeGenerated, EventCode, $ServiceName, $ServiceFileName, $ServiceType, $ServiceStartType, $User | Export-CSV -Path "$export_directory\$ComputerName-7045.csv" -NoTypeInformation)
-$getServiceInstalls
+#Check Windows System event log for services that were installed
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking System Event Logs for Service Installs on $ComputerName"
+    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+    $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
+    $ServiceFileName = @{n="Service File Name";e={$_.InsertionStrings[1]}}
+    $ServiceType = @{n="Service Type";e={$_.InsertionStrings[2]}}
+    $ServiceStartType = @{n="Service Start Type";e={$_.InsertionStrings[3]}}
+    $user = @{n="User";e={($_.User -split '\\')[1]}}
+    Get-WmiObject Win32_NTLogEvent -ComputerName $ComputerName | Where {$_.logfile -Match "System"} | Where-Object {$_.EventCode -eq '7045'} | select $TimeGenerated, EventCode, $ServiceName, $ServiceFileName, $ServiceType, $ServiceStartType, $User | Export-CSV -Path "$export_directory\$ComputerName-7045.csv" -NoTypeInformation
+}
+
+#RDP Events
+function Get-RemoteRDPEvents($ComputerName) {
+#Check Microsoft-Windows-TerminalServices-LocalSessionManager/Operational for RDP Events
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking for RDP Events on $ComputerName"
+    $domain = @{n="domain";e={((($_.Message -split '\n')[2] -replace "\r","" -split " ")[1] -split "\\")[0] }}
+    $user = @{n="User";e={((($_.Message -split '\n')[2] -replace "\r","" -split " ")[1] -split "\\")[1] }}
+    $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
+    $sessionID = @{n="Session ID";e={(($_.Message -split '\n')[3] -replace "\r","" -split " ")[2] }}
+    $netAddress = @{n="Source Network Address";e={(($_.Message -split '\n')[4] -replace "\r","" -split " ")[3] }}
+    Get-WinEvent -ComputerName $ComputerName @{LogName = "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"} | select TimeCreated, id, $sessionID, $domain, $user, $netAddress, $message | Export-CSV -Path "$export_directory\$ComputerName-rdp.csv" -NoTypeInformation 
 }
 
 #Processes
 function Get-RemoteProcesses($ComputerName){
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Running Processes on $ComputerName"
-$CreationDate = @{n="CreationDate";e={$_.ConvertToDateTime($_.CreationDate)}}
-Get-WmiObject Win32_Process -ComputerName $ComputerName | select Name,Description,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$ComputerName-processes.csv" -NoTypeInformation
+#Get the current running processes on the remote host
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Running Processes on $ComputerName"
+    $CreationDate = @{n="CreationDate";e={$_.ConvertToDateTime($_.CreationDate)}}
+    Get-WmiObject Win32_Process -ComputerName $ComputerName | select Name,Description,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$ComputerName-processes.csv" -NoTypeInformation
 }
 
 #Services
 function Get-RemoteServicesActive($ComputerName){
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Services on $ComputerName"
-Get-WmiObject Win32_Service -ComputerName $ComputerName | select Name,ProcessID,StartMode,State,Status,PathName | export-CSV -Path "$export_directory\$ComputerName-services.csv" -NoTypeInformation
+#Get a list of active running services on the remote host
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Services on $ComputerName"
+    Get-WmiObject Win32_Service -ComputerName $ComputerName | select Name,ProcessID,StartMode,State,Status,PathName | export-CSV -Path "$export_directory\$ComputerName-services.csv" -NoTypeInformation
 }
 
 function Get-RemoteArtifacts($ComputerName){
-$export_directory = "$location\$ComputerName"
-$net_path = "\\$ComputerName\C$\"
-CheckExportDir
-Write-Host ""
-Write-Host "Retrieving specific host-based artifacts from $ComputerName"
-$fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt','usb.csv')
-$outnet = ($driveLetter + ”netstat.txt”)
-$outtasks = ($driveLetter + ”tasklist.txt")
-$outtasksvc = ($driveLetter + ”tasksvc.txt")
-$outscquery = ($driveLetter + ”scquery.txt")
-$outipconfig = ($driveLetter + ”ipconfig.txt")
-$outdns = ($driveLetter + ”dns.txt")
-$outroute = ($driveLetter + ”route.txt")
-$outarp = ($driveLetter + ”arp.txt")
-$outsched = ($driveLetter + ”sched.txt")
-$outusb = ($driveLetter + ”usb.csv")
+#Get artifacts from the remote host using Invoke-WMI objects. Artifacts will be saved on the root of the OS Drive (determined by $driveLetter)
+#Artifacts then will be copied from the target to the destination, then deleted from the target
+    $export_directory = "$location\$ComputerName"
+    $net_path = "\\$ComputerName\C$\"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Retrieving specific host-based artifacts from $ComputerName"
+    $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt','usb.csv')
+    $outnet = ($driveLetter + ”netstat.txt”)
+    $outtasks = ($driveLetter + ”tasklist.txt")
+    $outtasksvc = ($driveLetter + ”tasksvc.txt")
+    $outscquery = ($driveLetter + ”scquery.txt")
+    $outipconfig = ($driveLetter + ”ipconfig.txt")
+    $outdns = ($driveLetter + ”dns.txt")
+    $outroute = ($driveLetter + ”route.txt")
+    $outarp = ($driveLetter + ”arp.txt")
+    $outsched = ($driveLetter + ”sched.txt")
+    $outusb = ($driveLetter + ”usb.csv")
 
     
-$artifacts = @{ netstat = ("netstat.exe -ano >> $outnet"); tasklist = "tasklist.exe /v >> $outtasks"; tasksvc = "tasklist.exe /svc >> $outtasksvc"; scquery = "sc.exe query state= all >> $outscquery"; ipconfig = "ipconfig.exe /all >> $outipconfig"; dns = "ipconfig.exe /displaydns >> $outdns"; route = "route.exe PRINT >> $outroute"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"; usb = ("$powershell -command Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR\*\* | select FriendlyName,PSChildName | ConvertTo-CSV -NoTypeInformation >> $outusb") }
+    $artifacts = @{ netstat = ("netstat.exe -ano >> $outnet"); tasklist = "tasklist.exe /v >> $outtasks"; tasksvc = "tasklist.exe /svc >> $outtasksvc"; scquery = "sc.exe query state= all >> $outscquery"; ipconfig = "ipconfig.exe /all >> $outipconfig"; dns = "ipconfig.exe /displaydns >> $outdns"; route = "route.exe PRINT >> $outroute"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"; usb = ("$powershell -command Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR\*\* | select FriendlyName,PSChildName | ConvertTo-CSV -NoTypeInformation >> $outusb") }
 
     Try{
     foreach($key in $artifacts.Keys){
-    $invokeArtifacts = (Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $ComputerName -ErrorAction stop)
-    Write-Host " -$key"
+        Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $ComputerName -ErrorAction stop
+        Write-Host " -$key"
     }
-    $invokeUSB = (Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($artifacts.usb) -ComputerName $ComputerName -ErrorAction stop)
+    Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($artifacts.usb) -ComputerName $ComputerName -ErrorAction stop
     }
     Catch{
-
-    Throw $_
-    Break
+        Throw $_
+        Break
     }
-start-sleep -s 5
+    start-sleep -s 7
     Write-Host "Copying artifacts to export directory"
     foreach($file in $fileList){
         Copy-Item ($net_path + $file) "$export_directory\$ComputerName-$file" -Force
         Write-Host "Removing $file from host"
         Remove-Item ($net_path + $file) -Force
         }
+    #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
     $usbcsv = (Import-CSV -Path ”$export_directory\$ComputerName-usb.csv” | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" )
     $usbcsv -replace "PSChildName","Serial Number" >> "$export_directory\$ComputerName-basicinfo.html"
     Write-Host "Host-based artifact acquisition complete"
 }
 
-function Get-RemoteMemoryDump($ComputerName){
-$export_directory = "$location\$ComputerName"
-$net_path = "\\$ComputerName\C$\"
-CheckExportDir
-Write-Host "Getting Memory Dump of $ComputerName"
-    Try {
-    Copy-Item -Path "$location\bin\winpmem.exe" -Destination ($net_path + "winpmem.exe") -Force
-    $invokeMemDump = (Invoke-WmiMethod -Class win32_process -name Create -ArgumentList ($net_path + "winpmem.exe --format raw -o " + $driveLetter + "memory.raw") -ComputerName $ComputerName -ErrorAction stop)
-    $memdumpPID = $invokeMemDump.processID
-    $memdumpRunning = { Get-WmiObject -Class win32_process -Filter "ProcessID='$memdumpPID'" -ComputerName $ComputerName -ErrorAction SilentlyContinue | ? { ($_.ProcessName -eq 'winpmem.exe') } }
-    }
-    Catch{
-    Throw $_
-    Break
-    }
-    while ($null -ne (& $memdumpRunning)) {
-    start-sleep -s 2
-    }
-Write-Host "Removing winpmem executable from host"
-Remove-Item ($net_path + "winpmem.exe") -Force
-Write-Host "Copying memory dump to export directory"
-$copyMem = (Copy-Item ($net_path + "memory.raw") "$export_directory\$ComputerName-memory.raw")
-Write-Host "Removing memory dump from host"
-Remove-Item ($net_path + "memory.raw") -Force
-Write-Host "Memory acquisition complete"
-}
-
 function Get-RemoteWirelessInfo($ComputerName){
-$export_directory = "$location\$ComputerName"
-CheckExportDir
-Write-Host ""
-Write-Host "Checking Host Wireless Profiles"
-$outWireless = ("$export_directory\$ComputerName-wireless.txt")
-$wireless = "netsh.exe wlan show profiles name='*' >> $outWireless"
-$invokeNetsh = (Invoke-WmiMethod -Class win32_process -name Create -ArgumentList ($shell + $wireless) -ComputerName $ComputerName -ErrorAction stop)
-Write-Host "Wireless Profile acquisition complete"
+#Use netsh on the host to retrieve Wireless Network profiles. 
+#Can be configured to retrieve the wireless key using the key=clear command, but is not enabled by default
+    $export_directory = "$location\$ComputerName"
+    CheckExportDir
+    Write-Host ""
+    Write-Host "Checking Host Wireless Profiles"
+    $outWireless = ("$export_directory\$ComputerName-wireless.txt")
+    $wireless = "netsh.exe wlan show profiles name='*' >> $outWireless"
+    Invoke-WmiMethod -Class win32_process -name Create -ArgumentList ($shell + $wireless) -ComputerName $ComputerName -ErrorAction stop
+    Write-Host "Wireless Profile acquisition complete"
 }
-
 
 function Get-RemoteAppCompat($ComputerName){
+# Adapted from https://github.com/davidhowell-tx/PS-WindowsForensics/blob/master/AppCompatCache/KansaModule/Get-AppCompatCache.ps1
+# Modified for usage within WMI
+# Added Win10-CreatorsUpdate partial support (0x34)
 $export_directory = "$location\$ComputerName"
 CheckExportDir
 Write-Host ""
 Write-Host "Checking AppCompatCache on $ComputerName"
-# Adapted from https://github.com/davidhowell-tx/PS-WindowsForensics/blob/master/AppCompatCache/KansaModule/Get-AppCompatCache.ps1
-# Modified for usage within WMI
-# Added Win10-CreatorsUpdate partial support (0x34)
+
 
 #Get AppCompatCache from Registry
 
@@ -815,7 +817,35 @@ if ($AppCompatCache -ne $null) {
 		}
 	}
 }
-}
 
+function Get-RemoteMemoryDump($ComputerName){
+#Copy the winpmem exec to the remote host, create a memory dump, copy to the originating source, and delete the results from the target
+    $export_directory = "$location\$ComputerName"
+    $net_path = "\\$ComputerName\C$\"
+    CheckExportDir
+    Write-Host "Getting Memory Dump of $ComputerName"
+    Try {
+        Copy-Item -Path "$location\bin\winpmem.exe" -Destination ($net_path + "winpmem.exe") -Force
+        $invokeMemDump = (Invoke-WmiMethod -Class win32_process -name Create -ArgumentList ($net_path + "winpmem.exe --format raw -o " + $driveLetter + "memory.raw") -ComputerName $ComputerName -ErrorAction stop)
+        $memdumpPID = $invokeMemDump.processID
+        $memdumpRunning = { Get-WmiObject -Class win32_process -Filter "ProcessID='$memdumpPID'" -ComputerName $ComputerName -ErrorAction SilentlyContinue | ? { ($_.ProcessName -eq 'winpmem.exe') } }
+    }
+    Catch{
+        Throw $_
+        Break
+    }
+    while ($null -ne (& $memdumpRunning)) {
+    start-sleep -s 2
+    }
+    Write-Host "Removing winpmem executable from host"
+    Remove-Item ($net_path + "winpmem.exe") -Force
+    Write-Host "Copying memory dump to export directory"
+    Copy-Item ($net_path + "memory.raw") "$export_directory\$ComputerName-memory.raw"
+    Write-Host "Removing memory dump from host"
+    Remove-Item ($net_path + "memory.raw") -Force
+    Write-Host "Memory acquisition complete"
+}
+}
+Export-ModuleMember -function Get-Remote*
 
 
