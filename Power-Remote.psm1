@@ -50,7 +50,6 @@ param (
     [System.String]$export_directory = "$location\$ComputerName",
     [System.String]$net_path = "\\$ComputerName\C$\",
     [System.String]$driveLetter = (gwmi win32_operatingsystem -ComputerName $ComputerName -Credential $Credential | select -expand SystemDrive) + "\",
-    [System.String]$powershell = ($driveLetter + "windows\system32\WindowsPowerShell\v1.0\powershell.exe"),
     [System.String]$shell = ("cmd /c " + $driveLetter + "windows\system32\"),
     [System.String]$shimcachelocation = "SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache\",
     [System.String]$htmlHeader = @'
@@ -111,7 +110,7 @@ function RemoteRunAll($ComputerName){
     CheckExportDir
     
     Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
-    $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteMemoryDump','Get-RemoteWirelessInfo','Get-RemoteAppCompat')
+    $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteMemoryDump','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB')
     foreach ($func in $functions){ 
     Write-ProgressHelper -StatusMessage "Starting function" -StepNumber ($stepCounter++)
     & $func $ComputerName
@@ -482,7 +481,7 @@ function Get-RemoteArtifacts($ComputerName){
     CheckExportDir
     
     Write-ProgressHelper -StatusMessage "Retrieving specific host-based artifacts from $ComputerName" -StepNumber ($stepCounter++)
-    $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt','usb.csv')
+    $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.txt')
     $outnet = ($driveLetter + ”netstat.txt”)
     $outtasks = ($driveLetter + ”tasklist.txt")
     $outtasksvc = ($driveLetter + ”tasksvc.txt")
@@ -492,17 +491,15 @@ function Get-RemoteArtifacts($ComputerName){
     $outroute = ($driveLetter + ”route.txt")
     $outarp = ($driveLetter + ”arp.txt")
     $outsched = ($driveLetter + ”sched.txt")
-    $outusb = ($driveLetter + ”usb.csv")
-
     
-    $artifacts = @{ netstat = ("netstat.exe -ano >> $outnet"); tasklist = "tasklist.exe /v >> $outtasks"; tasksvc = "tasklist.exe /svc >> $outtasksvc"; scquery = "sc.exe query state= all >> $outscquery"; ipconfig = "ipconfig.exe /all >> $outipconfig"; dns = "ipconfig.exe /displaydns >> $outdns"; route = "route.exe PRINT >> $outroute"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"; usb = ("$powershell -command Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Enum\USBSTOR\*\* | select FriendlyName,PSChildName | ConvertTo-CSV -NoTypeInformation >> $outusb") }
+    $artifacts = @{ netstat = ("netstat.exe -ano >> $outnet"); tasklist = "tasklist.exe /v >> $outtasks"; tasksvc = "tasklist.exe /svc >> $outtasksvc"; scquery = "sc.exe query state= all >> $outscquery"; ipconfig = "ipconfig.exe /all >> $outipconfig"; dns = "ipconfig.exe /displaydns >> $outdns"; route = "route.exe PRINT >> $outroute"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"}
 
     Try{
     foreach($key in $artifacts.Keys){
         Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $ComputerName -Credential $Credential -ErrorAction stop | Out-Null
         Write-ProgressHelper -StatusMessage " -$key"
     }
-    Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($artifacts.usb) -ComputerName $ComputerName -Credential $Credential -ErrorAction stop | Out-Null
+    
     }
     Catch{
         Throw $_
@@ -516,9 +513,7 @@ function Get-RemoteArtifacts($ComputerName){
         Write-ProgressHelper -StatusMessage "Removing $file from host"
         Remove-Item ($net_path + $file) -Force
         }
-    #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
-    $usbcsv = (Import-CSV -Path ”$export_directory\$ComputerName-usb.csv” | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" )
-    $usbcsv -replace "PSChildName","Serial Number" >> "$export_directory\$ComputerName-basicinfo.html"
+
     Write-ProgressHelper -StatusMessage "Host-based artifact acquisition complete" -StepNumber ($stepCounter++)
 }
 
@@ -873,6 +868,96 @@ function Get-RemoteMemoryDump($ComputerName){
     Write-ProgressHelper -StatusMessage "Removing memory dump from host"
     Remove-Item ($net_path + "memory.raw") -Force
     Write-ProgressHelper -StatusMessage "Memory acquisition complete" -StepNumber ($stepCounter++)
+}
+
+function Get-RemoteUSB($ComputerName){
+    CheckExportDir
+    Write-ProgressHelper -StatusMessage "Getting USB Details from $ComputerName" -StepNumber ($stepCounter++)
+    $location = Get-Location
+    $export_directory = "$location\$ComputerName"
+    $net_path = "\\$ComputerName\C$\"
+    $driveLetter = (gwmi win32_operatingsystem -ComputerName $ComputerName -Credential $Credential | select -expand SystemDrive) + "\"
+    $powershell = "C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -command "
+    . .\Join-Object.ps1
+        
+    Write-ProgressHelper -StatusMessage "Getting Volume information from HKLM:\System\MountedDevices"
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + '$Volumes = @(); Get-Item HKLM:\System\MountedDevices | Select -ExpandProperty Property | where {$_ -like \"\??\Volume*\"} | ForEach-OBject {$volume = $_; $Volumes += New-Object -TypeName psobject -Property @{ Volume = $volume -replace \"\\\?\?\\Volume\",\"\"; KeyValue = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $Volume).\"$volume\" | ForEach-Object{[convert]::ToString($_, 16)}) -join \"\" ; ASCII = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $Volume).\"$volume\" | ForEach-Object{[convert]::ToChar($_)}) -join \"\" -replace \"\x00\",\"\" }}; $Volumes | Select Volume,ASCII,KeyValue | Export-CSV -NoTypeInformation \"$driveletter\volumes.csv\"') -ComputerName $ComputerName -ErrorAction Stop | Out-Null
+                                                                             
+    Write-ProgressHelper -StatusMessage "Getting Drive Letter information from HKLM:\System\MountedDevices"
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + '$Drives = @(); Get-Item HKLM:\System\MountedDevices | Select -ExpandProperty Property | where {$_ -like \"\Dos*\"} | ForEach-OBject {$drive = $_; $Drives += New-Object -TypeName psobject -Property @{ Drive = $drive -replace \"\\DosDevices\\\\\",\"\"; KeyValue = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $drive).\"$drive\" | ForEach-Object{[convert]::ToString($_, 16)}) -join \"\"; ASCII = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $drive).\"$drive\" | ForEach-Object{[convert]::ToChar($_)}) -join \"\" -replace \"\x00\",\"\"}}; $Drives | Select Drive,ASCII,KeyValue | Export-CSV -NoTypeInformation \"$driveLetter\drives.csv\"') -ComputerName $ComputerName -ErrorAction Stop | Out-Null
+    Start-Sleep -s 5
+    
+    Write-ProgressHelper -StatusMessage "Copying generated artifacts from $ComputerName\$driveLetter"
+    Copy-Item ($net_path + "volumes.csv") "$export_directory\$ComputerName-volumes.csv"
+    Copy-Item ($net_path + "drives.csv") "$export_directory\$ComputerName-drives.csv"
+    
+    Write-ProgressHelper -StatusMessage "Removing artifacts from $ComputerName\$driveLetter"
+    Remove-Item ($net_path + "volumes.csv") -Force
+    Remove-Item ($net_path + "drives.csv") -Force
+    
+    Write-ProgressHelper -StatusMessage "Generating table of Drive Letters and Volumes from $ComputerName"
+    $Drives = (Import-CSV $export_directory\$ComputerName-drives.csv)
+    $Volumes = (Import-CSV $export_directory\$ComputerName-volumes.csv)
+    Join-Object -Left $Drives -Right $Volumes -LeftJoinProperty KeyValue -RightJoinProperty KeyValue -Type AllInBoth | Select Drive,Volume,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-volumes_and_drives.csv"
+    
+    Write-ProgressHelper -StatusMessage "Getting User Mountpoints from each users NTUSER.DAT registry key on $ComputerName"
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + '(Get-ItemProperty \"HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\*\" | Where {$_.ProfileImagePath -notlike \"C:\windows*\"}| Select @{n=\"UserName\";e={($_.ProfileImagePath -split \"\\\\\")[2]}}, @{n=\"SID\";e={$_.PSChildName}} | ForEach-Object {$SID = $_.SID; $UserName = $_.UserName; (Get-Item Registry::HKEY_USERS\$SID\Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2).GetSubKeyNames() -like \"{*\" } | Select @{n=\"GUID\";e={$_}},@{l=\"UserName\";e={$UserName}}) | Export-CSV -NoTypeInformation \"$driveLetter\UserMountPoints.csv\"') -ComputerName $ComputerName -ErrorAction Stop | Out-Null
+    Start-sleep -s 5
+    
+    Write-ProgressHelper -StatusMessage "Copying User Mountpoints artifacts from $ComputerName"
+    Copy-Item ($net_path + "UserMountPoints.csv") "$export_directory\$ComputerName-usermounts.csv"
+    
+    Write-ProgressHelper -StatusMessage "Removing artifact from $ComputerName"
+    Remove-Item ($net_path + "usermountpoints.csv") -Force
+    
+    Write-ProgressHelper -StatusMessage "Generating table of Drive Letters, Volumes, and Usernames who mounted them"
+    $DriveVols = (Import-CSV "$export_directory\$ComputerName-volumes_and_drives.csv")
+    $UserMounts = (Import-CSV "$export_directory\$ComputerName-usermounts.csv")
+    Join-Object -Left $DriveVols -Right $UserMounts -LeftJoinProperty Volume -RightJoinProperty GUID -Type AllInBoth | Select Drive,GUID,Volume,UserName,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldrives.csv"
+    
+    Write-ProgressHelper -StatusMessage "Retrieving USBSTOR and WpdBusEnum information from $ComputerName to get volume names"
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\USBSTOR\*\* | Select @{n=\"Serial\";e={$_.PSChildName}},@{n=\"Device\";e={$_.FriendlyName}},ContainerID,@{n=\"HardwareID\";e={($_.HardwareID)[0]}},@{n=\"Vendor_Product\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbstor.csv\"')) -ComputerName $ComputerName -ErrorAction Stop | Out-Null
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\WpdBusEnumRoot\UMB\* | Select DeviceDesc,FriendlyName,ContainerID | Export-CSV -NoTypeInformation \"$driveLetter\wpdenum.csv\"')) -ComputerName $ComputerName -ErrorAction Stop | Out-Null
+    Start-sleep -s 5
+    
+    Write-ProgressHelper -StatusMessage "Retrieving artifacts from $ComputerName"
+    Copy-Item ($net_path + "usbstor.csv") ("$export_directory\$ComputerName-usbstor.csv")
+    Copy-Item ($net_path + "wpdenum.csv") ("$export_directory\$ComputerName-wpdenum.csv")
+    Start-Sleep -s 5
+    
+    Write-ProgressHelper -StatusMessage "Removing generated artifacts from $ComputerName"
+    Remove-Item ($net_path + "usbstor.csv") -Force
+    Remove-Item ($net_path + "wpdenum.csv") -Force
+    
+    Write-ProgressHelper -StatusMessage "Generating table containing all USB drive information from registry from $ComputerName"
+    $usbtable = (Import-CSV $export_directory\$ComputerName-usbstor.csv)
+    $wpdtable = (Import-CSV $export_directory\$ComputerName-wpdenum.csv)
+    Join-Object -Left $wpdtable -Right $usbtable -LeftJoinProperty ContainerID -RightJoinProperty ContainerID -Type AllInBoth  | Select Device,FriendlyName,Serial,HardwareID,Vendor_Product,ContainerID | Sort-Object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driveinfo.csv"
+    
+    Write-ProgressHelper -StatusMessage "Retrieving setupapi.dev.log from $ComputerName"
+    Copy-Item ($net_path + "Windows\inf\setupapi.dev.log") ("$export_directory\$ComputerName-setupapi.dev.log")
+    Start-sleep -s 2
+    
+    Write-ProgressHelper -StatusMessage "Grabbing First and Last Insert Dates for all USB devices discovered using setupapi.dev.log and Windows Event Logs from $ComputerName"
+    $lastInsertDate = (Import-CSV $export_directory\$computerName-driveinfo.csv | select Serial | ForEach-Object {$Serial = $_.Serial ; Get-WinEvent -LogName "Microsoft-Windows-DriverFrameworks-UserMode/Operational" -ComputerName $ComputerName | Where {$_.message -match "$Serial"} | Select TimeCreated, ID, OpCodeDisplayName, UserID, Message | Sort TimeCreated -desc} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbLastInsert.csv")
+    $firstInsertDate = (Import-CSV $export_directory\$ComputerName-driveinfo.csv | select Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | select-string $Serial -SimpleMatch -context 1 } )
+    $firstInsertDate = $firstInsertDate  -replace "\r\n", "" -replace ">","" -replace "]","," -replace "Section start ","" -replace "\[Device Install \(Hardware initiated\) - ","DeviceInstall," -replace "    ",""| Where {$_ -clike "*Install*"} >> "$export_directory\$ComputerName-usbFirstInsert.csv"
+    
+    Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + 'Get-Item HKLM:\System\CurrentControlSet\Enum\USB\*\* | Select @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usb_vidpid.csv\"') -ComputerName $ComputerName -ErrorAction Stop | Out-Null
+    Start-sleep -s 2
+    Copy-Item ($net_path + "usb_vidpid.csv") ("$export_directory\$ComputerName-usb_vidpid.csv")
+    Start-sleep -s 1
+    Remove-Item ($net_path + "usb_vidpid.csv") -Force
+
+    Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
+    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={(($_.ASCII) -split "\#")[2]}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
+    $driveinfo = (Import-CSV $export_directory\$ComputerName-driveinfo.csv)
+    Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
+    #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
+    
+    $usbBasicInfo = (Import-CSV E:\PowerShell\10.20.10.216\10.20.10.216-usbinfo_complete.csv | Select Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,ASCII | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html)
+    Write-ProgressHelper -StatusMessage "Remote USB Device Information retrieval complete." -StepNumber ($stepCounter++)
 }
 
 Export-ModuleMember -function Get-Remote*
