@@ -7,7 +7,8 @@ The tool is currently in Alpha, with updates being pushed regularly.
 It will grab the following if run start-to-finish:
 
 - Basic Host Information
-- USBSTOR artifacts from the registry
+- USBSTOR/USB/WpdBusEnum/Volume/GUID/VID_PID/MountedDevices/User MountPoints2 artifacts from the registry
+- First and Last USB Insert Times from setupapi.dev.log and Windows Event Logs
 - Running processes for all users
 - All services and states
 - IPConfig
@@ -25,6 +26,8 @@ It will grab the following if run start-to-finish:
 A folder will be created automatically given the hostname 
 # Requirements
 This tool will require you have the winpmem executable from Rekall renamed to winpmem.exe, and stored in a folder named 'bin' in the directory the module is run from.
+It also requires the Join-Object.ps1 script, located in this repo, borrowed from Warren Frame (github.com/RamblingCookieMonster)
+Place the Join-Object.ps1 file in the directory where you will run the module.
 
 Script and functions can be executed in one of two ways:
 
