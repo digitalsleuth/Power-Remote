@@ -25,6 +25,11 @@
     .PARAMETER ComputerName
 
             The host you want to run the remote acquisition against - either an IP address or Computer Name, in double quotes " "
+
+    .PARAMETER Credential
+            
+            At a basic level, the username for which you will provide authorized credentials.
+
     
     .Example
     
@@ -44,11 +49,8 @@ param (
     [System.Management.Automation.Credential()]
     $Credential = [pscredential]::Empty,
     [System.String]$location = (get-location),
-    [System.String]$export_directory = "$location\$ComputerName",
-    [System.String]$net_path = "\\$ComputerName\C$\",
     [System.String]$driveLetter = (gwmi win32_operatingsystem -ComputerName $ComputerName -Credential $Credential | select -expand SystemDrive) + "\",
     [System.String]$shell = ("cmd /c " + $driveLetter + "windows\system32\"),
-    [System.String]$shimcachelocation = "SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache\",
     [System.String]$htmlHeader = @'
 <!--mce:0-->
 <style>BODY{font-family: Arial; font-size: 10pt;}
@@ -76,13 +78,16 @@ Write-Progress -Activity 'Processing...' -Status $StatusMessage -PercentComplete
 $script:steps = ([System.Management.Automation.PsParser]::Tokenize((gc "$PSScriptRoot\$($MyInvocation.MyCommand.Name)"), [ref]$null) | where { $_.Type -eq 'Command' -and $_.Content -eq 'Write-ProgressHelper' }).Count
 $stepCounter = 0
 
-function Timer($timed_function,$ComputerName,$Credential){
+function Get-RemoteTimer($ComputerName,$Credential){
+#Diagnostics for timing the running of all functions against the host
 $timer = [system.diagnostics.stopwatch]::StartNew()
-& $timed_function $ComputerName $Credential
+Write-Host "Started at" ((Get-Date) -split " ")[1]
+rra $ComputerName $Credential
 $timer.Stop()
-$timer.Elapsed
+Write-Host "Finished at" ((Get-Date) -split " ")[1]
+Write-Host "Total Elapsed Time:"$timer.Elapsed.Minutes "Minutes and"$Timer.Elapsed.Seconds "Seconds"
+$timer.Reset()
 }
-Export-ModuleMember -function Timer
 
 function CheckExportDir() {
 #Check to see if the directory we want to export to exists and, if not, create it.
@@ -101,20 +106,20 @@ function RemoteRunAll($ComputerName,$Credential){
     $location = (get-location)
     $export_directory = "$location\$ComputerName"
     CheckExportDir
+    $script:credname = $null
     if ($Credential -ne $null) {
         $script:credname = $Credential
         }
     Try {
-        
-        $Credential = $script:Credential
+        $script:credname = $Credential
+        #$Credential = $script:Credential
         Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
-        $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB')#,'Get-RemoteMemoryDump')
+        $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB','Get-RemoteMemoryDump')
         foreach ($func in $functions){ 
         Write-ProgressHelper -StatusMessage "Starting $func" -StepNumber ($stepCounter++)
         & $func $ComputerName $Credential
             }
-        $script:Credential = $null
-        $credname = $null
+        CleanUp
         }
     Catch [System.UnauthorizedAccessException] {
         
@@ -122,8 +127,9 @@ function RemoteRunAll($ComputerName,$Credential){
         $Credential = Get-Credential -Message "Username and Password Required" -Username $credname
         $script:Credential = $Credential
         RemoteRunAll $ComputerName $Credential
+        
         }
-    
+
 }
 Set-Alias rra RemoteRunAll
 Export-ModuleMember -Function RemoteRunAll -alias rra
@@ -138,6 +144,7 @@ function Get-RemotePCInfo($ComputerName,$Credential) {
     Elseif ($Credential -is [pscredential]) {
         $credname = $Credential.UserName
         }
+    Else {$Credname = $script:credname}
     $Credential = $script:Credential 
     Try {
     $credsplat = @{}      
@@ -949,6 +956,7 @@ function Get-RemoteRDPEvents($ComputerName,$Credential) {
 #Processes
 function Get-RemoteProcesses($ComputerName,$Credential){
 #Get the current running processes on the remote host
+    
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -974,6 +982,7 @@ function Get-RemoteProcesses($ComputerName,$Credential){
     Write-ProgressHelper -StatusMessage "Checking Running Processes on $ComputerName" -StepNumber ($stepCounter++)
     $CreationDate = @{n="CreationDate";e={$_.ConvertToDateTime($_.CreationDate)}}
     Get-WmiObject Win32_Process -ComputerName $ComputerName @credsplat | select Name,Description,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$ComputerName-processes.csv" -NoTypeInformation
+    Get-WmiObject Win32_PerfFormattedData_PerfProc_Process -ComputerName $ComputerName @credsplat | Select @{n="Process Name";e={$_.Name}},@{n="PID";e={$_.IDProcess}},@{n="PPID";e={$_.CreatingProcessID}},@{n="CPU(%)";e={$_.PercentProcessorTime}},@{n="Memory_Usage(MB)";e={[Math]::Round(($_.workingSetPrivate /1mb),2)}} | Sort 'CPU(%)' -Descending | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-processorUsage.csv"
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
@@ -987,6 +996,7 @@ function Get-RemoteProcesses($ComputerName,$Credential){
 #Services
 function Get-RemoteServicesActive($ComputerName,$Credential){
 #Get a list of active running services on the remote host
+    
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -1024,6 +1034,7 @@ function Get-RemoteServicesActive($ComputerName,$Credential){
 function Get-RemoteArtifacts($ComputerName,$Credential){
 #Get artifacts from the remote host using Invoke-WMI objects. Artifacts will be saved on the root of the OS Drive (determined by $driveLetter)
 #Artifacts then will be copied from the target to the destination, then deleted from the target
+    
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
     CheckExportDir
@@ -1048,25 +1059,25 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         $credsplat['Credential'] = $Credential
     }
     Write-ProgressHelper -StatusMessage "Retrieving specific host-based artifacts from $ComputerName" -StepNumber ($stepCounter++)
-    $fileList = @('netstat.txt','tasklist.txt','tasksvc.txt','scquery.txt','ipconfig.txt','dns.txt','route.txt','arp.txt','sched.csv')
-    $outnet = ($driveLetter + ”netstat.txt”)
-    $outtasks = ($driveLetter + ”tasklist.txt")
-    $outtasksvc = ($driveLetter + ”tasksvc.txt")
-    $outscquery = ($driveLetter + ”scquery.txt")
-    $outipconfig = ($driveLetter + ”ipconfig.txt")
+    $fileList = @('netstat.csv','tasklist.csv','tasksvc.csv','driverquery.csv','dns.txt','arp.txt','sched.csv')
+    $outnet = ($driveLetter + ”netstat.csv”)
+    $outtasks = ($driveLetter + ”tasklist.csv")
+    $outtasksvc = ($driveLetter + ”tasksvc.csv")
     $outdns = ($driveLetter + ”dns.txt")
-    $outroute = ($driveLetter + ”route.txt")
+    $outdriver = ($driveLetter + ”driverquery.csv")
     $outarp = ($driveLetter + ”arp.txt")
     $outsched = ($driveLetter + ”sched.csv")
     
-    $artifacts = @{ netstat = ("netstat.exe -ano >> $outnet"); tasklist = "tasklist.exe /v >> $outtasks"; tasksvc = "tasklist.exe /svc >> $outtasksvc"; scquery = "sc.exe query state= all >> $outscquery"; ipconfig = "ipconfig.exe /all >> $outipconfig"; dns = "ipconfig.exe /displaydns >> $outdns"; route = "route.exe PRINT >> $outroute"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"}
+    $artifacts = @{ netstat = ("for /F 'tokens=1-5 delims= ' %A in ('netstat.exe -ano') do echo %A,%B,%C,%D,%E>>$outnet"); tasklist = "tasklist.exe /v /FO csv >> $outtasks"; tasksvc = "tasklist.exe /svc /FO csv >> $outtasksvc"; dns = "ipconfig.exe /displaydns >> $outdns"; driverquery = "driverquery.exe /v /FO csv >> $outdriver"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"}
 
     Try{
     foreach($key in $artifacts.Keys){
         Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $ComputerName @credsplat -ErrorAction stop | Out-Null
         Write-ProgressHelper -StatusMessage " -$key"
     }
-    
+    Get-WmiObject win32_networkadapterconfiguration -ComputerName $ComputerName @credsplat | Select PSComputerName,DNSHostName,Description,DNSDomain,MacAddress,@{n="IPv4";e={$_.IpAddress[0]}},@{n="IPv6";e={$_.IPAddress[1]}},@{n="IPv4Subnet";e={$_.IPSubnet[0]}},@{n="IPv6Subnet";e={$_.IPSubnet[1]}},DHCPServer,DHCPEnabled,@{n="DHCPLeaseObtained";e={$_.ConvertToDateTime($_.DHCPLeaseObtained)}},@{n="DHCPLeaseExpires";e={$_.ConvertToDateTime($_.DHCPLeaseExpires)}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-ipconfig.csv"
+    Get-WmiObject win32_service -ComputerName $ComputerName @credsplat | Select Name,DisplayName,PathName,ServiceType,State,Status,InstallDate,StartMode,DelayedAutoStart,AcceptPause,AcceptStop,ErrorControl,ExitCode,ServiceSpecificExitCode | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-scquery.csv"
+    Get-WmiObject win32_ip4routeTable -ComputerName $ComputerName @credsplat | Select PSComputerName,Name,Destination,Mask,NextHop,Metric1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-route.csv"
     }
     Catch{
         Throw $_
@@ -1084,6 +1095,26 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         Remove-Item ($drivemount + ":\" + $file) -Force 
         }
     Remove-PSDrive $drivemount
+    $dns_client_cache = @()
+    $raw_dns_data = (Get-Content "$export_directory\$ComputerName-dns.txt")
+    for ($element = 3; $element -le $raw_dns_data.length - 3; $element++) {
+    if ( $raw_dns_data[$element].IndexOf('Record Name') -gt 0 ) {
+        if ( $dns_entry ) { $dns_client_cache += $dns_entry }
+        $dns_entry = New-Object -TypeName PSObject
+        Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'RecordName' -Value $raw_dns_data[$element].Split(':')[1].Trim()
+    } elseif ( $raw_dns_data[$element].IndexOf('Record Type') -gt 0 ) {
+        Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'RecordType' -Value $raw_dns_data[$element].Split(':')[1].Trim()
+    } elseif ( $raw_dns_data[$element].IndexOf('Time To Live') -gt 0 ) {
+        Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'TimeToLive' -Value $raw_dns_data[$element].Split(':')[1].Trim()
+    } elseif ( $raw_dns_data[$element].IndexOf('Data Length') -gt 0 ) {
+        Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'DataLength' -Value $raw_dns_data[$element].Split(':')[1].Trim()
+    } elseif ( $raw_dns_data[$element].IndexOf('Section') -gt 0 ) {
+        Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'Section' -Value $raw_dns_data[$element].Split(':')[1].Trim()
+    } elseif ( $raw_dns_data[$element].IndexOf('CNAME Record') -gt 0 ) {
+        Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'CNAMERecord' -Value $raw_dns_data[$element].Split(':')[1].Trim()
+    }
+}
+    $dns_client_cache | Export-Csv "$export_directory\$ComputerName-dns.csv" -NoTypeInformation
     Write-ProgressHelper -StatusMessage "Host-based artifact acquisition complete" -StepNumber ($stepCounter++)
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1098,6 +1129,7 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
 function Get-RemoteWirelessInfo($ComputerName,$Credential){
 #Use netsh on the host to retrieve Wireless Network profiles. 
 #Can be configured to retrieve the wireless key using the key=clear command, but is not enabled by default
+    
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
     CheckExportDir
@@ -1147,6 +1179,7 @@ function Get-RemoteAppCompat($ComputerName,$Credential){
 # Adapted from https://github.com/davidhowell-tx/PS-WindowsForensics/blob/master/AppCompatCache/KansaModule/Get-AppCompatCache.ps1
 # Modified for usage within WMI
 # Added Win10-CreatorsUpdate partial support (0x34)
+    $shimcachelocation = "SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache\"
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -1479,6 +1512,7 @@ if ($AppCompatCache -ne $null) {
 
 function Get-RemoteMemoryDump($ComputerName,$Credential){
 #Copy the winpmem exec to the remote host, create a memory dump, copy to the originating source, and delete the results from the target
+  
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -1655,6 +1689,13 @@ function Get-RemoteUSB($ComputerName,$Credential){
     $script:Credential = $Credential
     Get-RemoteUSB $ComputerName $Credential
     }
+}
+
+function Cleanup {
+Clear-Variable -Name Credential
+Clear-Variable -Name Credname
+Remove-Variable -Name Credential
+Remove-Variable -Name credname
 }
 
 Export-ModuleMember -function Get-Remote*
