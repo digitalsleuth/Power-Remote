@@ -7,16 +7,15 @@
         When the module is imported, each function can be run separately, or altogether using the 'rra' alias or RemoteRunAll
 
         TODO:
-            Add redundancies for failures
             Add sqlite3.exe for csv import to db
             Add portable db viewer.
             Add choice of export (if var = csv, then $format = ....)
-            Figure out why creds will work in script but not module
+ 
     .DESCRIPTION
         
 
     .NOTES
-        Version        : 1.0
+        Version        : 1.5
         Author         : Fetchered
         Prerequisite   : winpmem.exe binary in $location\bin folder
                        : Join-Object.ps1 (forked from github.com/ramblingcookiemonster/powershell)
@@ -25,59 +24,79 @@
     .PARAMETER ComputerName
 
             The host you want to run the remote acquisition against - either an IP address or Computer Name, in double quotes " "
+            or a txt file (including path if not in current directory) containing the hostnames or IP's of the hosts you wish to run
+            the function against.
 
     .PARAMETER Credential
             
             At a basic level, the username for which you will provide authorized credentials.
+            Required when the current user credentials are unauthorized on the remote machine.
+            If not provided, you will be prompted to enter them, if required.
 
-    
+    .PARAMETER HKCR, HKCU, HKLM, HKU, HKCC
+            Specifically for the Get-RemoteRegistryKey function, will allow you to choose the Hive containing the
+            registry key you wish to query
+
+    .PARAMETER Subkey
+            Specifically for the Get-RemoteRegistryKey function, is the full path, minus the actual key, you wish to query
+            For example, if you want the SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation Key, the subkey will be:
+            "SOFTWARE\Microsoft\Windows\CurrentVersion\", in quotes
+
+    .PARAMETER Value
+            Specifically for the Get-RemoteRegistry function, is the actual key for which you wish to attain the value
+            For example, if you want the SOFTWARE\Microsoft\Windows\CurrentVersion\OEMInformation key, the value will be:
+            "OEMInformation", in quotes
     .Example
-    
-        
+            
         Get-RemoteUSB
         Actual command: 
-        Get-RemoteUSB -ComputerName "IP/ComputerName"
+        Get-RemoteUSB -ComputerName "IP/Hostname" -Credential "Username"
+        Get-RemoteUSB -ComputerName "IP/Hostname"
+        Get-RemoteUSB -ComputerName "hosts.txt" -Credential "Username"
+        Get-RemoteUSB -ComputerName "hosts.txt"
+
+        Get-RemoteRegistryKey
+        Actual command:
+        Get-RemoteRegistryKey -ComputerName "IP/Hostname" -Credential "Username" -HKLM -Subkey "SOFTWARE\Microsoft\Windows\CurrentVersion\" -Value "OEMInformation"
+        Get-RemoteRegistryKey -ComputerName "hosts.txt" -HKLM -Subkey "SOFTWARE\Microsoft\Windows\CurrentVersion\" -Value "OEMInformation"
+
 
     #>
+#Module Parameters
 [CmdletBinding()]
 param (
     [Parameter(ParameterSetName='ComputerName', Position=0)]
     $ComputerName = "127.0.0.1",
-    [Parameter()]
+    [Parameter(ParameterSetName='Credential')]
     [ValidateNotNull()]
     [pscredential]
     [System.Management.Automation.Credential()]
-    $Credential = [pscredential]::Empty,
-    [System.String]$location = (get-location),
-    [System.String]$driveLetter = (gwmi win32_operatingsystem -ComputerName $ComputerName -Credential $Credential | select -expand SystemDrive) + "\",
-    [System.String]$shell = ("cmd /c " + $driveLetter + "windows\system32\"),
-    [System.String]$htmlHeader = @'
+    $Credential = [pscredential]::Empty   
+)
+
+[System.String]$location = (get-location)
+[System.String]$driveLetter = (gwmi win32_operatingsystem -ComputerName $ComputerName -Credential $Credential | select -expand SystemDrive) + "\"
+[System.String]$shell = ("cmd /c " + $driveLetter + "windows\system32\")
+$TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
+$TimeWritten = @{n="TimeWritten";e={$_.ConvertToDateTime($_.TimeWritten)}}
+[System.String]$htmlHeader = @'
 <!--mce:0-->
 <style>BODY{font-family: Arial; font-size: 10pt;}
 TABLE{border: 1px solid black; border-collapse: collapse;}
 TH{border: 1px solid black; background: #dddddd; padding: 5px;}
 TD{border: 1px solid black; padding: 5px;}</style>
-'@,
-    $regkey = @{ "HKEY_CLASSES_ROOT" = 2147483648; "HKEY_CURRENT_USER" = 2147483649; "HKEY_LOCAL_MACHINE" = 2147483650; "HKEY_USERS" = 2147483651; "HKEY_CURRENT_CONFIG" = 2147483653 },
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}},
-    $TimeWritten = @{n="TimeWritten";e={$_.ConvertToDateTime($_.TimeWritten)}}
-)
-
+'@
  
-function Write-ProgressHelper #Borrowed from https://www.adamtheautomator.com/building-progress-bar-powershell-scripts/
-{
-   param (
-      [int]$StepNumber,
- 
-      [string]$StatusMessage
-   )
+#Progress Bar
+function Write-ProgressHelper {
+#Borrowed from https://www.adamtheautomator.com/building-progress-bar-powershell-scripts/
+param ([int]$StepNumber,[string]$StatusMessage)
 Write-Progress -Activity 'Processing...' -Status $StatusMessage -PercentComplete (($StepNumber / $steps) * 100)
-
 }
-
 $script:steps = ([System.Management.Automation.PsParser]::Tokenize((gc "$PSScriptRoot\$($MyInvocation.MyCommand.Name)"), [ref]$null) | where { $_.Type -eq 'Command' -and $_.Content -eq 'Write-ProgressHelper' }).Count
 $stepCounter = 0
 
+#Diagnostic Timer
 function Get-RemoteTimer($ComputerName,$Credential){
 #Diagnostics for timing the running of all functions against the host
 $timer = [system.diagnostics.stopwatch]::StartNew()
@@ -89,6 +108,7 @@ Write-Host "Total Elapsed Time:"$timer.Elapsed.Minutes "Minutes and"$Timer.Elaps
 $timer.Reset()
 }
 
+#Set and Check Export Directory exists
 function CheckExportDir() {
 #Check to see if the directory we want to export to exists and, if not, create it.
 #Create a log file in this directory as well to track forensic acquisition
@@ -101,8 +121,15 @@ function CheckExportDir() {
         }
 }
 
+#Run All
 function RemoteRunAll($ComputerName,$Credential){
 #Run all functions against the target 
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        RemoteRunAll $ComputerName $Credential
+        }
+    }
     $location = (get-location)
     $export_directory = "$location\$ComputerName"
     CheckExportDir
@@ -114,7 +141,7 @@ function RemoteRunAll($ComputerName,$Credential){
         $script:credname = $Credential
         #$Credential = $script:Credential
         Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
-        $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB','Get-RemoteMemoryDump')
+        $functions = @('Get-RemotePCInfo','Get-RemoteApplications','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvents','Get-RemoteAuditLog', 'Get-RemoteUserEvents', 'Get-RemoteUserChanges','Get-RemotePasswordEvents','Get-RemoteGroupEvents','Get-RemoteGroupChanges','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvents','Get-RemoteSvcStatusEvents','Get-RemoteSvcInstallsEvents','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB')#,'Get-RemoteMemoryDump')
         foreach ($func in $functions){ 
         Write-ProgressHelper -StatusMessage "Starting $func" -StepNumber ($stepCounter++)
         & $func $ComputerName $Credential
@@ -131,13 +158,17 @@ function RemoteRunAll($ComputerName,$Credential){
         }
 
 }
-Set-Alias rra RemoteRunAll
-Export-ModuleMember -Function RemoteRunAll -alias rra
 
 #Basic Info
 function Get-RemotePCInfo($ComputerName,$Credential) {
 #Grab numerous pieces of information about the host to establish basic details for reference
 #Output to HTML file
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemotePCInfo $ComputerName $Credential
+        }
+    }
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
         $credname = $Credential 
         }
@@ -183,7 +214,7 @@ function Get-RemotePCInfo($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemotePCInfo $ComputerName $Credential
@@ -191,6 +222,12 @@ function Get-RemotePCInfo($ComputerName,$Credential) {
     }
 #Applications
 function Get-RemoteApplications($ComputerName,$Credential) {
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteApplications $ComputerName $Credential
+        }
+    }
 #Use the Win32_Product Class to grab all software installed by standard methods
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
         $credname = $Credential 
@@ -217,7 +254,7 @@ function Get-RemoteApplications($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteApplications $ComputerName $Credential
@@ -227,6 +264,12 @@ function Get-RemoteApplications($ComputerName,$Credential) {
 #Security Event Logs - 4624 and 4625
 function Get-RemoteAuditStatus($ComputerName,$Credential){
 #Check the Windows Security event log for 4624 and 4625 events
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteAuditStatus $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -272,7 +315,7 @@ function Get-RemoteAuditStatus($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteAuditStatus $ComputerName $Credential
@@ -282,6 +325,12 @@ function Get-RemoteAuditStatus($ComputerName,$Credential){
 #Security Event Log Info - 4634
 function Get-RemoteAccountLogoff($ComputerName,$Credential){
 #Check Windows Security event log for 4634 events, all types
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteAccountLogoff $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -315,7 +364,7 @@ function Get-RemoteAccountLogoff($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteAccountLogoff $ComputerName $Credential
@@ -324,7 +373,13 @@ function Get-RemoteAccountLogoff($ComputerName,$Credential){
 
 #Security Event Logs - 4698 - 4702
 function Get-RemoteTaskEvents($ComputerName,$Credential){
-#Check the Windows Security event log for all new and modified scheduled tasks 
+#Check the Windows Security event log for all new and modified scheduled tasks
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteTaskEvents $ComputerName $Credential
+        }
+    } 
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -359,7 +414,7 @@ function Get-RemoteTaskEvents($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteTaskEvents $ComputerName $Credential
@@ -369,6 +424,12 @@ function Get-RemoteTaskEvents($ComputerName,$Credential){
 #Event Logs - Security - 1102
 function Get-RemoteAuditLog($ComputerName,$Credential) {
 #Check Windows Security event log for event ID 1102, when the audit log is cleared
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteAuditLog $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
    if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -402,7 +463,7 @@ function Get-RemoteAuditLog($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteAuditLog $ComputerName $Credential
@@ -412,6 +473,12 @@ function Get-RemoteAuditLog($ComputerName,$Credential) {
 #Event Logs - Security - 4720, 4722, 4725, 4726, 4738, 4741, 4743
 function Get-RemoteUserEvents($ComputerName,$Credential) {
 #Check Windows Security event log for any added or deleted, accounts or computers
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteUserEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -450,7 +517,7 @@ function Get-RemoteUserEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteUserEvents $ComputerName $Credential
@@ -460,6 +527,12 @@ function Get-RemoteUserEvents($ComputerName,$Credential) {
 #Event Logs - Security - 4738
 function Get-RemoteUserChanges($ComputerName,$Credential) {
 #Check Windows Security event log for 4738, changed accounts or computers
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteUserChanges $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -500,7 +573,7 @@ function Get-RemoteUserChanges($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteUserChanges $ComputerName $Credential
@@ -510,6 +583,12 @@ function Get-RemoteUserChanges($ComputerName,$Credential) {
 #Event Logs - Security - 4723, 4724
 function Get-RemotePasswordEvents($ComputerName,$Credential) {
 #Check Windows Security event log for password changes or resets
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemotePasswordEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -546,7 +625,7 @@ function Get-RemotePasswordEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemotePasswordEvents $ComputerName $Credential
@@ -556,6 +635,12 @@ function Get-RemotePasswordEvents($ComputerName,$Credential) {
 #Event Logs - Security - 4727, 4730, 4731, 4734
 function Get-RemoteGroupEvents($ComputerName,$Credential) {
 #Check Windows Security event log for groups that have been created, deleted or modified
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteGroupEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -595,7 +680,7 @@ function Get-RemoteGroupEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteGroupEvents $ComputerName $Credential
@@ -605,6 +690,12 @@ function Get-RemoteGroupEvents($ComputerName,$Credential) {
 #Event Logs - Security - 4728, 4729, 4732, 4733, 4735
 function Get-RemoteGroupChanges($ComputerName,$Credential) {
 #Check Windows Security event log for additions to, deletions from, or changes to groups
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteGroupChanges $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -642,7 +733,7 @@ function Get-RemoteGroupChanges($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteGroupChanges $ComputerName $Credential
@@ -652,6 +743,12 @@ function Get-RemoteGroupChanges($ComputerName,$Credential) {
 #Event Logs - Security - 4648
 function Get-RemoteRunAs($ComputerName,$Credential) {
 #Check Windows Security event log for any attempts to run applications as another user
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteRunAs $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -693,7 +790,7 @@ function Get-RemoteRunAs($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteRunAs $ComputerName $Credential
@@ -703,6 +800,12 @@ function Get-RemoteRunAs($ComputerName,$Credential) {
 #Event Logs - Security - 4672
 function Get-RemoteSpecialPriv($ComputerName,$Credential) {
 #Check the Windows Security event log for any accounts using Special Privileges
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteSpecialPriv $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -738,7 +841,7 @@ function Get-RemoteSpecialPriv($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteSpecialPriv $ComputerName $Credential
@@ -748,6 +851,12 @@ function Get-RemoteSpecialPriv($ComputerName,$Credential) {
 #Event Logs - System - 866
 function Get-RemoteSRPBlock($ComputerName,$Credential) {
 #Check Windows Application event log for any software that was blocked by the Windows Software Restriction Policy
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteSRPBlock $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -779,7 +888,7 @@ function Get-RemoteSRPBlock($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteSRPBlock $ComputerName $Credential
@@ -789,6 +898,12 @@ function Get-RemoteSRPBlock($ComputerName,$Credential) {
 #Event Logs - System - 6005-6006, 6008
 function Get-RemotePowerEvents($ComputerName,$Credential) {
 #Check Windows System event log for any physical power events (off/on/reboot/dirty shutdown)
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemotePowerEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -818,7 +933,7 @@ function Get-RemotePowerEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemotePowerEvents $ComputerName $Credential
@@ -828,6 +943,12 @@ function Get-RemotePowerEvents($ComputerName,$Credential) {
 #Event Logs - System - 7036
 function Get-RemoteSvcStatusEvents($ComputerName,$Credential) {
 #Check Windows System log for service modifications (start/stop/restart/run)
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteSvcStatusEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -860,7 +981,7 @@ function Get-RemoteSvcStatusEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteSvcStatusEvents $ComputerName $Credential
@@ -870,6 +991,12 @@ function Get-RemoteSvcStatusEvents($ComputerName,$Credential) {
 #Event Logs - System - 7045
 function Get-RemoteSvcInstallsEvents($ComputerName,$Credential) {
 #Check Windows System event log for services that were installed
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteSvcInstallsEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -904,7 +1031,7 @@ function Get-RemoteSvcInstallsEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteSvcInstallsEvents $ComputerName $Credential
@@ -914,6 +1041,12 @@ function Get-RemoteSvcInstallsEvents($ComputerName,$Credential) {
 #RDP Events
 function Get-RemoteRDPEvents($ComputerName,$Credential) {
 #Check Microsoft-Windows-TerminalServices-LocalSessionManager/Operational for RDP Events
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteRDPEvents $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -946,7 +1079,7 @@ function Get-RemoteRDPEvents($ComputerName,$Credential) {
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteRDPEvents $ComputerName $Credential
@@ -956,7 +1089,12 @@ function Get-RemoteRDPEvents($ComputerName,$Credential) {
 #Processes
 function Get-RemoteProcesses($ComputerName,$Credential){
 #Get the current running processes on the remote host
-    
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteProcesses $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -986,7 +1124,7 @@ function Get-RemoteProcesses($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteProcesses $ComputerName $Credential
@@ -996,7 +1134,12 @@ function Get-RemoteProcesses($ComputerName,$Credential){
 #Services
 function Get-RemoteServicesActive($ComputerName,$Credential){
 #Get a list of active running services on the remote host
-    
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteServicesActive $ComputerName $Credential
+        }
+    }    
     $export_directory = "$location\$ComputerName"
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -1024,17 +1167,23 @@ function Get-RemoteServicesActive($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteServicesActive $ComputerName $Credential
     }
 }
 
+#Artifacts
 function Get-RemoteArtifacts($ComputerName,$Credential){
 #Get artifacts from the remote host using Invoke-WMI objects. Artifacts will be saved on the root of the OS Drive (determined by $driveLetter)
 #Artifacts then will be copied from the target to the destination, then deleted from the target
-    
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteArtifacts $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
     CheckExportDir
@@ -1073,7 +1222,7 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
     Try{
     foreach($key in $artifacts.Keys){
         Invoke-WmiMethod -class Win32_process -name Create -ArgumentList ($shell + $artifacts.$key) -ComputerName $ComputerName @credsplat -ErrorAction stop | Out-Null
-        Write-ProgressHelper -StatusMessage " -$key"
+        Write-ProgressHelper -StatusMessage " -$key" -StepNumber ($StepCounter++)
     }
     Get-WmiObject win32_networkadapterconfiguration -ComputerName $ComputerName @credsplat | Select PSComputerName,DNSHostName,Description,DNSDomain,MacAddress,@{n="IPv4";e={$_.IpAddress[0]}},@{n="IPv6";e={$_.IPAddress[1]}},@{n="IPv4Subnet";e={$_.IPSubnet[0]}},@{n="IPv6Subnet";e={$_.IPSubnet[1]}},DHCPServer,DHCPEnabled,@{n="DHCPLeaseObtained";e={$_.ConvertToDateTime($_.DHCPLeaseObtained)}},@{n="DHCPLeaseExpires";e={$_.ConvertToDateTime($_.DHCPLeaseExpires)}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-ipconfig.csv"
     Get-WmiObject win32_service -ComputerName $ComputerName @credsplat | Select Name,DisplayName,PathName,ServiceType,State,Status,InstallDate,StartMode,DelayedAutoStart,AcceptPause,AcceptStop,ErrorControl,ExitCode,ServiceSpecificExitCode | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-scquery.csv"
@@ -1083,7 +1232,6 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         Throw $_
         Break
     }
-    
     Write-ProgressHelper -StatusMessage "Copying artifacts to export directory" -StepNumber ($stepCounter++)
     $drivemount = (ls function:[d-z]: -n | ?{ !(test-path $_) } | Select -First 1) -replace ":",""
     New-PSDrive -Name $drivemount -PSProvider filesystem -Root $net_path @credsplat | Out-Null
@@ -1095,7 +1243,7 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         Remove-Item ($drivemount + ":\" + $file) -Force 
         }
     Remove-PSDrive $drivemount
-    $dns_client_cache = @()
+    $dns_client_cache = @() #Shared on StackOverflow by Adam - https://stackoverflow.com/questions/49678217/export-list-array-to-csv-in-powershell
     $raw_dns_data = (Get-Content "$export_directory\$ComputerName-dns.txt")
     for ($element = 3; $element -le $raw_dns_data.length - 3; $element++) {
     if ( $raw_dns_data[$element].IndexOf('Record Name') -gt 0 ) {
@@ -1119,17 +1267,23 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host $PSItem
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteArtifacts $ComputerName $Credential
     }
 }
 
+#Wireless
 function Get-RemoteWirelessInfo($ComputerName,$Credential){
 #Use netsh on the host to retrieve Wireless Network profiles. 
 #Can be configured to retrieve the wireless key using the key=clear command, but is not enabled by default
-    
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteWirelessInfo $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
     CheckExportDir
@@ -1168,17 +1322,25 @@ function Get-RemoteWirelessInfo($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteWirelessInfo $ComputerName $Credential
     }
 }
 
-function Get-RemoteAppCompat($ComputerName,$Credential){
+#AppCompatCache
+function Get-RemoteAppCompat{
+param($ComputerName,$Credential)
 # Adapted from https://github.com/davidhowell-tx/PS-WindowsForensics/blob/master/AppCompatCache/KansaModule/Get-AppCompatCache.ps1
 # Modified for usage within WMI
 # Added Win10-CreatorsUpdate partial support (0x34)
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteAppCompat $ComputerName $Credential
+        }
+    }
     $shimcachelocation = "SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache\"
     $export_directory = "$location\$ComputerName"
     CheckExportDir
@@ -1187,23 +1349,28 @@ function Get-RemoteAppCompat($ComputerName,$Credential){
         }
     Elseif ($Credential -is [pscredential]) {
         $credname = $Credential.UserName
-        }
-    $Credential = $script:Credential 
+        }    
+    
     Try {
     $credsplat = @{}      
     if ($Credential -is [pscredential]){
-        $credsplat['Credential'] = $Credential
-        
+        $credsplat['Credential'] = $Credential     
     }
     Elseif ($Credential -ne $null -and $Credential -isnot [pscredential]) {
-        $credSplat['Credential'] = (Get-Credential -Message "Username and Password Required" -UserName $credname)
+        $credSplat['Credential'] = (Get-Credential -Message "User/Password Required" -UserName $credname) 
+
+    }
+    Elseif ($Credential -eq $null -and $script:Credential -ne [pscredential]::Empty) {
+        $Credential = $script:Credential
+        $credsplat['Credential'] = $Credential
         
     }
-    Else {
-        $credsplat['Credential'] = $Credential
+    Elseif ($Credential -eq $null -and $script:Credential -ne $null) {
+        $credsplat['Credential'] = (Get-Credential -Message "Username and Password Required" -Username $credname)
+        
     }
     Write-ProgressHelper -StatusMessage "Checking AppCompatCache on $ComputerName" -StepNumber ($stepCounter++)
-    $reg = (Get-WMIObject -List -NameSpace "root\default" -ComputerName $ComputerName @credsplat | Where-Object {$_.Name -eq "StdRegProv"})
+    $reg = Get-WMIObject -List "StdRegProv" -NameSpace "root\default" -ComputerName $ComputerName @credsplat
 
 #Get AppCompatCache from Registry
 
@@ -1211,7 +1378,7 @@ function Get-RemoteAppCompat($ComputerName,$Credential){
 $EntryArray=@()
 $AppCompatCache=$Null
 
-$AppCompatCache = $reg.GetBinaryValue($regkey.HKEY_LOCAL_MACHINE, $SHIMCACHELOCATION, "AppCompatCache").uValue;
+$AppCompatCache = $reg.GetBinaryValue(2147483650, $SHIMCACHELOCATION, "AppCompatCache").uValue;
 
 if ($AppCompatCache -ne $null) {
 	# Initialize a Memory Stream and Binary Reader to scan through the Byte Array
@@ -1503,16 +1670,22 @@ if ($AppCompatCache -ne $null) {
 }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteAppCompat $ComputerName $Credential
     }
 }
 
+#Memory Dump
 function Get-RemoteMemoryDump($ComputerName,$Credential){
 #Copy the winpmem exec to the remote host, create a memory dump, copy to the originating source, and delete the results from the target
-  
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteMemoryDump $ComputerName $Credential
+        }
+    }
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -1562,14 +1735,22 @@ function Get-RemoteMemoryDump($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteMemoryDump $ComputerName $Credential
     }
 }
 
+#USB Devices
 function Get-RemoteUSB($ComputerName,$Credential){
+#Gather USB Drive Letters, Serials, Usernames who inserted devices, First and Last Insert etc.
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteUSB $ComputerName $Credential
+        }
+    }
     CheckExportDir
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
         $credname = $Credential 
@@ -1600,20 +1781,23 @@ function Get-RemoteUSB($ComputerName,$Credential){
     $drivemount = (ls function:[d-z]: -n | ?{ !(test-path $_) } | Select -First 1) -replace ":",""
     New-PSDrive -Name $drivemount -PSProvider filesystem -Root $net_path @credsplat | Out-Null
     . .\Join-Object.ps1
-        
+ 
     Write-ProgressHelper -StatusMessage "Getting Volume information from HKLM:\System\MountedDevices"
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + '$Volumes = @(); Get-Item HKLM:\System\MountedDevices | Select -ExpandProperty Property | where {$_ -like \"\??\Volume*\"} | ForEach-OBject {$volume = $_; $Volumes += New-Object -TypeName psobject -Property @{ Volume = $volume -replace \"\\\?\?\\Volume\",\"\"; KeyValue = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $Volume).\"$volume\" | ForEach-Object{[convert]::ToString($_, 16)}) -join \"\" ; ASCII = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $Volume).\"$volume\" | ForEach-Object{[convert]::ToChar($_)}) -join \"\" -replace \"\x00\",\"\" }}; $Volumes | Select Volume,ASCII,KeyValue | Export-CSV -NoTypeInformation \"$driveletter\volumes.csv\"') -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
-                                                                             
+    while (!(Test-Path ($drivemount + ":\volumes.csv"))) {start-sleep -s 1}
     Write-ProgressHelper -StatusMessage "Getting Drive Letter information from HKLM:\System\MountedDevices"
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + '$Drives = @(); Get-Item HKLM:\System\MountedDevices | Select -ExpandProperty Property | where {$_ -like \"\Dos*\"} | ForEach-OBject {$drive = $_; $Drives += New-Object -TypeName psobject -Property @{ Drive = $drive -replace \"\\DosDevices\\\\\",\"\"; KeyValue = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $drive).\"$drive\" | ForEach-Object{[convert]::ToString($_, 16)}) -join \"\"; ASCII = ((Get-ItemProperty HKLM:\System\MountedDevices -Name $drive).\"$drive\" | ForEach-Object{[convert]::ToChar($_)}) -join \"\" -replace \"\x00\",\"\"}}; $Drives | Select Drive,ASCII,KeyValue | Export-CSV -NoTypeInformation \"$driveLetter\drives.csv\"') -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
-    Start-Sleep -s 5
+    while (!(Test-Path ($drivemount + ":\drives.csv"))) {start-sleep -s 1}
     
     Write-ProgressHelper -StatusMessage "Copying generated artifacts from $ComputerName\$driveLetter"
     Copy-Item ($drivemount + ":\volumes.csv") "$export_directory\$ComputerName-volumes.csv"
     Copy-Item ($drivemount + ":\drives.csv") "$export_directory\$ComputerName-drives.csv"
     
+
     Write-ProgressHelper -StatusMessage "Removing artifacts from $ComputerName\$driveLetter"
+    while (!(Test-Path ("$export_directory\$ComputerName-volumes.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\volumes.csv") -Force
+     while (!(Test-Path ("$export_directory\$ComputerName-drives.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\drives.csv") -Force
     
     Write-ProgressHelper -StatusMessage "Generating table of Drive Letters and Volumes from $ComputerName"
@@ -1638,16 +1822,19 @@ function Get-RemoteUSB($ComputerName,$Credential){
     
     Write-ProgressHelper -StatusMessage "Retrieving USBSTOR and WpdBusEnum information from $ComputerName to get volume names"
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\USBSTOR\*\* | Select @{n=\"Serial\";e={$_.PSChildName}},@{n=\"Device\";e={$_.FriendlyName}},ContainerID,@{n=\"HardwareID\";e={($_.HardwareID)[0]}},@{n=\"Vendor_Product\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbstor.csv\"')) -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
+    while (!(Test-Path ($drivemount + ":\usbstor.csv"))) {start-sleep -s 1}
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\WpdBusEnumRoot\UMB\* | Select DeviceDesc,FriendlyName,ContainerID | Export-CSV -NoTypeInformation \"$driveLetter\wpdenum.csv\"')) -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
-    Start-sleep -s 5
-    
+    while (!(Test-Path ($drivemount + ":\wpdenum.csv"))) {start-sleep -s 1}
+        
     Write-ProgressHelper -StatusMessage "Retrieving artifacts from $ComputerName"
     Copy-Item ($drivemount + ":\usbstor.csv") ("$export_directory\$ComputerName-usbstor.csv")
     Copy-Item ($drivemount + ":\wpdenum.csv") ("$export_directory\$ComputerName-wpdenum.csv")
     Start-Sleep -s 5
     
     Write-ProgressHelper -StatusMessage "Removing generated artifacts from $ComputerName"
+    while (!(Test-Path ("$export_directory\$ComputerName-usbstor.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\usbstor.csv") -Force
+    while (!(Test-Path ("$export_directory\$ComputerName-wpdenum.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\wpdenum.csv") -Force
     
     Write-ProgressHelper -StatusMessage "Generating table containing all USB drive information from registry from $ComputerName"
@@ -1667,15 +1854,16 @@ function Get-RemoteUSB($ComputerName,$Credential){
     
     Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + 'Get-Item HKLM:\System\CurrentControlSet\Enum\USB\*\* | Select @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usb_vidpid.csv\"') -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
-    Start-sleep -s 2
+    while (!(Test-Path ($drivemount + ":\usb_vidpid.csv"))) {start-sleep -s 1}
     Copy-Item ($drivemount + ":\usb_vidpid.csv") ("$export_directory\$ComputerName-usb_vidpid.csv")
     Start-sleep -s 1
+    while (!(Test-Path ("$export_directory\$ComputerName-usb_vidpid.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\usb_vidpid.csv") -Force
 
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
     $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={(($_.ASCII) -split "\#")[2]}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
     $driveinfo = (Import-CSV $export_directory\$ComputerName-driveinfo.csv)
-    Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
+    Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
     
     $usbBasicInfo = (Import-CSV $export_directory\$ComputerName-usbinfo_complete.csv | Select Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,ASCII | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html)
@@ -1684,20 +1872,128 @@ function Get-RemoteUSB($ComputerName,$Credential){
     }
     Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
-    Write-Host "$PSItem"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteUSB $ComputerName $Credential
     }
 }
 
+#Specific Registry Key
+function Get-RemoteRegistryKey{
+#Grab details about a specific registry on a host or a group of hosts
+param($ComputerName,[ValidateNotNullOrEmpty()]$Credential,[switch]$HKCR,[switch]$HKCU,[switch]$HKLM,[switch]$HKU,[switch]$HKCC,$Subkey,$Value)
+    if ($ComputerName -like '*.txt') { 
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteRegistryKey $ComputerName $Credential
+        }
+    }
+    if ($HKCR) {$Hive = 2147483648; $HiveName = "HKEY_CLASSES_ROOT"; $Choice = $HKCR}
+    if ($HKCU) {$Hive = 2147483649; $HiveName = "HKEY_CURRENT_USER"; $Choice = $HKCU}
+    if ($HKLM) {$Hive = 2147483650; $HiveName = "HKEY_LOCAL_MACHINE"; $Choice = $HKLM}
+    if ($HKU) {$Hive = 2147483651; $HiveName = "HKEY_USERS"; $Choice = $HKU}
+    if ($HKCC) {$Hive = 2147483653; $HiveName = "HKEY_CURRENT_CONFIG"; $Choice = $HKCC}
+
+    if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credname = $Credential 
+        }
+    Elseif ($Credential -is [pscredential]) {
+        $credname = $Credential.UserName
+        }
+    #$Credential = $script:Credential 
+    Try {
+        $credsplat = @{}      
+    if ($Credential -is [pscredential]){
+        $credsplat['Credential'] = $Credential     
+    }
+    Elseif ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credSplat['Credential'] = (Get-Credential -Message "Username and Password Required" -UserName $credname) 
+
+    }
+    Elseif ($Credential -eq $null -and $script:Credential -ne [pscredential]::Empty) {
+        $Credential = $script:Credential
+        $credsplat['Credential'] = $Credential
+        
+    }
+    Elseif ($Credential -eq $null -and $script:Credential -ne $null) {
+        $credsplat['Credential'] = (Get-Credential -Message "Username and Password Required" -Username $credname)
+        
+    }
+    $REG_SZ = 1
+    $REG_EXPAND_SZ = 2
+    $REG_BINARY = 3
+    $REG_DWORD = 4
+    $REG_MULTI_SZ = 7
+    $REG_QWORD = 11
+    if ($subkey[-1] -ne "\") {
+        $subkey = ($subkey + "\")
+    }
+    $RegProvider = Get-WmiObject -list "StdRegProv" -namespace root\default -ComputerName $ComputerName @credsplat
+    $sNames = $RegProvider.EnumValues($hive, $subkey).sNames
+    $Types = $RegProvider.EnumValues($hive, $subkey).Types
+    $Index = [array]::IndexOf($sNames, $value)
+    $Type = $Types[$Index]
+    switch ($Type) {
+          $REG_SZ
+          {
+            $KeyType = 'REG_SZ'
+            $ReturnKeyValue = $RegProvider.GetStringValue($hive, $subkey, $value).sValue
+            Break
+          }
+          $REG_EXPAND_SZ
+          {
+            $KeyType = 'REG_EXPAND_SZ'
+            $ReturnKeyValue = $RegProvider.GetExpandedStringValue($hive, $subkey, $value).sValue
+            Break
+          }
+          $REG_BINARY
+          {
+            $KeyType = 'REG_BINARY' 
+            $ReturnKeyValue =  $RegProvider.GetBinaryValue($hive, $subkey, $value).uValue
+            Break
+          }
+          $REG_DWORD
+          {
+            $KeyType = 'REG_DWORD'
+            $ReturnKeyValue = $RegProvider.GetDWORDValue($hive, $subkey, $value).uValue
+            Break
+          }
+          $REG_MULTI_SZ
+          {
+            $KeyType = 'REG_MULTI_SZ'
+            $ReturnKeyValue = $RegProvider.GetMultiStringValue($hive, $subkey, $value).sValue
+            Break
+          }
+          $REG_QWORD
+          {
+            $KeyType = 'REG_QWORD'
+            $ReturnKeyValue = $RegProvider.GetQWORDValue($hive, $subkey, $value).sValue
+            Break
+          }
+        }
+    Write-Host "\\$ComputerName\$HiveName\$subkey$value is a $KeyType key with a value of $ReturnKeyValue"
+    
+    }
+    Catch [System.UnauthorizedAccessException] {
+    Write-ProgressHelper -StatusMessage "Username and Password Required"
+    Write-Host ($PSItem -split "\.")[0] "- Credentials Required"
+    $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
+    $script:Credential = $Credential
+    Get-RemoteRegistryKey $ComputerName $Credential $Choice $subkey $value
+    }
+}
+
+#Cleanup
 function Cleanup {
+#Ensure the Credential and Credname variables do not stick in the current environment
 Clear-Variable -Name Credential
 Clear-Variable -Name Credname
 Remove-Variable -Name Credential
 Remove-Variable -Name credname
 }
-
+Set-Alias rra RemoteRunAll
+Export-ModuleMember -Function RemoteRunAll -alias rra
 Export-ModuleMember -function Get-Remote*
 
 
