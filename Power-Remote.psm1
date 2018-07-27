@@ -1715,7 +1715,7 @@ function Get-RemoteMemoryDump($ComputerName,$Credential){
     Else {
         $credsplat['Credential'] = $Credential
     }
-    $drivemount = (Get-ChildItem function:[d-z]: -n | Where-Object { !(test-path $_) } | Select-Object-First 1) -replace ":",""
+    $drivemount = (Get-ChildItem function:[d-z]: -n | Where-Object { !(test-path $_) } | Select-Object -First 1) -replace ":",""
     New-PSDrive -Name $drivemount -PSProvider filesystem -Root $net_path @credsplat | Out-Null
     Write-ProgressHelper -StatusMessage "Getting Memory Dump of $ComputerName" -StepNumber ($stepCounter++)
     Try {
