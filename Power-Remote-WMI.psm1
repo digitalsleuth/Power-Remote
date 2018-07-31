@@ -1816,13 +1816,22 @@ function Get-RemoteUSB($ComputerName,$Credential){
     while (!(Test-Path ("$export_directory\$ComputerName-usbvidpid.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\usbvidpid.csv") -Force
 
+    Write-ProgressHelper -StatusMessage "Getting USBSTOR Last Write Times"
+    Get-RemoteUSBLastWrite $ComputerName $Credential
+    Start-sleep -s 3
+    Copy-Item ($drivemount + ":\lastwritetimes.csv") ("$export_directory\$ComputerName-usblastwritetimes.csv")
+    $lastwrite = (Import-CSV $export_directory\$ComputerName-usblastwritetimes.csv)
+    $driveinfo = (Import-CSV $export_directory\$ComputerName-driveinfo.csv)
+    Join-Object -Left $driveinfo -Right $lastwrite -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,LastWriteTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
+    Remove-Item ($drivemount + ":\lastwritetimes.csv") -Force
+
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
     $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={(($_.ASCII) -split "\#")[2]}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
-    $driveinfo = (Import-CSV $export_directory\$ComputerName-driveinfo.csv)
-    Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
+    $alldriveinfo = (Import-CSV $export_directory\$ComputerName-alldriveinfo.csv)
+    Join-Object -Left $alldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue,LastWriteTime | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
 
-    Import-CSV $export_directory\$ComputerName-usbinfo_complete.csv | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,ASCII | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html
+    Import-CSV $export_directory\$ComputerName-usbinfo_complete.csv | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,ASCII,LastWriteTime | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html
     Write-ProgressHelper -StatusMessage "Remote USB Device Information retrieval complete." -StepNumber ($stepCounter++)
     Remove-PSDrive $drivemount
     }
@@ -1973,6 +1982,104 @@ function Get-RemoteRecentFiles($ComputerName,$Credential){
     $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
     $script:Credential = $Credential
     Get-RemoteRecentFiles $ComputerName $Credential
+    }
+}
+
+function Get-RemoteUSBLastWrite($ComputerName,$Credential){
+    if ($ComputerName -like '*.txt') {
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteUSB $ComputerName $Credential
+        }
+    }
+    if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credname = $Credential
+        }
+    Elseif ($Credential -is [pscredential]) {
+        $credname = $Credential.UserName
+        }
+    $Credential = $script:Credential
+    Try {
+    $credsplat = @{}
+    if ($Credential -is [pscredential]){
+        $credsplat['Credential'] = $Credential
+    }
+    Elseif ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credSplat['Credential'] = (Get-Credential -Message "Username and Password Required" -UserName $credname)
+    }
+    Else {
+        $credsplat['Credential'] = $Credential
+    }
+    $powershell = "C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -command "
+    $export_directory = "$location\$ComputerName"
+    $net_path = "\\$ComputerName\C$"
+    $scriptblock = {$Domain = [AppDomain]::CurrentDomain;
+            $DynAssembly = New-Object System.Reflection.AssemblyName('RegAssembly');
+            $AssemblyBuilder = $Domain.DefineDynamicAssembly($DynAssembly, [System.Reflection.Emit.AssemblyBuilderAccess]::Run);
+            $ModuleBuilder = $AssemblyBuilder.DefineDynamicModule('RegistryTimeStampModule', $False);
+            $TypeBuilder = $ModuleBuilder.DefineType('advapi32', 'Public, Class');
+            $PInvokeMethod = $TypeBuilder.DefineMethod(
+                'RegQueryInfoKey',
+                [Reflection.MethodAttributes] 'PrivateScope, Public, Static, HideBySig, PinvokeImpl', 
+                [IntPtr], 
+                [Type[]] @(
+                    [Microsoft.Win32.SafeHandles.SafeRegistryHandle],
+                    [System.Text.StringBuilder],
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32],
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [long].MakeByRefType()
+                )
+            );
+            $DllImportConstructor = [Runtime.InteropServices.DllImportAttribute].GetConstructor(@([String]));
+            $FieldArray = [Reflection.FieldInfo[]] @(       
+                [Runtime.InteropServices.DllImportAttribute].GetField('EntryPoint'),
+                [Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')
+            );
+            $FieldValueArray = [Object[]] @('RegQueryInfoKey',$True);
+            $SetLastErrorCustomAttribute = New-Object Reflection.Emit.CustomAttributeBuilder($DllImportConstructor,@('advapi32.dll'),$FieldArray,$FieldValueArray);
+            $PInvokeMethod.SetCustomAttribute($SetLastErrorCustomAttribute);
+            [void]$TypeBuilder.CreateType();
+            $ClassLength = 255;
+        [long]$TimeStamp = $null;
+        $RegistryKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'default').OpenSubKey('SYSTEM\CurrentControlSet\Enum\USBSTOR');
+        Add-Content -Path "C:\lastwritetimes.csv" -Value ('DeviceName,LastWriteTime,Serial')
+        foreach ($key in $RegistryKey.GetSubKeyNames()){
+        $serial = $RegistryKey.OpenSubKey($key).GetSubKeyNames()
+        $ClassName = New-Object System.Text.StringBuilder ($RegistryKey.OpenSubKey($key)).Name;
+        $RegistryHandle = ($RegistryKey.OpenSubKey($key)).Handle;
+        $Return = [advapi32]::RegQueryInfoKey(
+            $RegistryHandle,
+            $ClassName,
+            [ref]$ClassLength,
+            $Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$TimeStamp
+        );
+        [string]$dt = [datetime]::FromFileTime($Timestamp);
+        $dt = $dt.Trim();
+        Add-Content -Path "C:\lastwritetimes.csv" -Value ($key + ',' + $dt + ',' + $serial)
+        }}
+        Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + $scriptblock) -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
+        }
+        Catch [System.UnauthorizedAccessException] {
+    Write-ProgressHelper -StatusMessage "Username and Password Required"
+    Write-Output "Credentials Required"
+    $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
+    $script:Credential = $Credential
+    Get-RemoteUSBLastWrite $ComputerName $Credential
     }
 }
 #Cleanup
