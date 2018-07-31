@@ -1804,9 +1804,13 @@ function Get-RemoteUSB($ComputerName,$Credential){
 
     Write-ProgressHelper -StatusMessage "Grabbing First and Last Insert Dates for all USB devices discovered using setupapi.dev.log and Windows Event Logs from $ComputerName"
     Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverframeworks.csv"
-    Import-CSV $export_directory\$computerName-driveinfo.csv | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-driverframeworks.csv" | Where-Object {$_.message -match "$Serial"} | Select-Object TimeCreated, ID, OpCodeDisplayName, UserID, Message | Sort-Object TimeCreated -desc} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
+    $driveinfo = Import-CSV $export_directory\$ComputerName-driveinfo.csv
+    $driver = Import-CSV $export_directory\$ComputerName-driverframeworks.csv
+    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $driver | Where-Object {$_.message -match "$Serial"} | Select-Object @{n="LastInsertDate";e={$_.TimeCreated}}, ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}} | Sort-Object LastInsertDate -desc -Unique} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
     $firstInsertDate = (Import-CSV $export_directory\$ComputerName-driveinfo.csv | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | select-string $Serial -SimpleMatch -context 1 } )
-    $firstInsertDate = $firstInsertDate  -replace "\r\n", "" -replace ">","" -replace "]","," -replace "Section start ","" -replace "\[Device Install \(Hardware initiated\) - ","DeviceInstall," -replace "    ",""| Where-Object {$_ -clike "*Install*"} >> "$export_directory\$ComputerName-usbfirstinsert.csv"
+    Add-Content -Path "$export_directory\$ComputerName-usbfirstinsert.csv" -Value ("Type,Device,FirstInsertDate")
+    $firstInsertDate = $firstInsertDate  -replace "\r\n", "" -replace ">","" -replace "]","," -replace "Section start ","" -replace "\[Device Install \(Hardware initiated\) - ","DeviceInstall," -replace "    ","" -replace "^ ",""| Where-Object {$_ -clike "*Install*"}
+    Add-Content -Path "$export_directory\$ComputerName-usbfirstinsert.csv" -Value ($firstInsertDate)
 
     Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + 'Get-Item HKLM:\System\CurrentControlSet\Enum\USB\*\* | Select-Object @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbvidpid.csv\"') -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
@@ -1816,19 +1820,18 @@ function Get-RemoteUSB($ComputerName,$Credential){
     while (!(Test-Path ("$export_directory\$ComputerName-usbvidpid.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\usbvidpid.csv") -Force
 
-    Write-ProgressHelper -StatusMessage "Getting USBSTOR Last Write Times"
+    Write-ProgressHelper -StatusMessage "Getting USBSTOR Write Times"
     Get-RemoteUSBLastWrite $ComputerName $Credential
     Start-sleep -s 3
-    Copy-Item ($drivemount + ":\lastwritetimes.csv") ("$export_directory\$ComputerName-usblastwritetimes.csv")
-    $lastwrite = (Import-CSV $export_directory\$ComputerName-usblastwritetimes.csv)
-    $driveinfo = (Import-CSV $export_directory\$ComputerName-driveinfo.csv)
-    Join-Object -Left $driveinfo -Right $lastwrite -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,LastWriteTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
-    Remove-Item ($drivemount + ":\lastwritetimes.csv") -Force
+    Copy-Item ($drivemount + ":\usbwritetimes.csv") ("$export_directory\$ComputerName-usbwritetimes.csv")
+    $lastwrite = (Import-CSV $export_directory\$ComputerName-usbwritetimes.csv)
+    Join-Object -Left $driveinfo -Right $lastwrite -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,FirstWriteTime,LastWriteTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
+    Remove-Item ($drivemount + ":\usbwritetimes.csv") -Force
 
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
     $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={(($_.ASCII) -split "\#")[2]}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
     $alldriveinfo = (Import-CSV $export_directory\$ComputerName-alldriveinfo.csv)
-    Join-Object -Left $alldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue,LastWriteTime | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
+    Join-Object -Left $alldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue,FirstWriteTime,LastWriteTime | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
 
     Import-CSV $export_directory\$ComputerName-usbinfo_complete.csv | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,ASCII,LastWriteTime | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html
@@ -1989,7 +1992,7 @@ function Get-RemoteUSBLastWrite($ComputerName,$Credential){
     if ($ComputerName -like '*.txt') {
         ForEach ($Computer in Get-Content $ComputerName) {
         $ComputerName = $Computer
-        Get-RemoteUSB $ComputerName $Credential
+        Get-RemoteUSBLastWrite $ComputerName $Credential
         }
     }
     if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
@@ -2049,11 +2052,13 @@ function Get-RemoteUSBLastWrite($ComputerName,$Credential){
             $ClassLength = 255;
         [long]$TimeStamp = $null;
         $RegistryKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'default').OpenSubKey('SYSTEM\CurrentControlSet\Enum\USBSTOR');
-        Add-Content -Path "C:\lastwritetimes.csv" -Value ('DeviceName,LastWriteTime,Serial')
+        Add-Content -Path "C:\usbwritetimes.csv" -Value ('DeviceName,FirstWriteTime,LastWriteTime,Serial');
         foreach ($key in $RegistryKey.GetSubKeyNames()){
-        $serial = $RegistryKey.OpenSubKey($key).GetSubKeyNames()
+        $serial = $RegistryKey.OpenSubKey($key).GetSubKeyNames();
         $ClassName = New-Object System.Text.StringBuilder ($RegistryKey.OpenSubKey($key)).Name;
+        $ClassName2 = New-Object System.Text.StringBuilder (($RegistryKey.OpenSubKey($key)).OpenSubKey($serial)).Name;
         $RegistryHandle = ($RegistryKey.OpenSubKey($key)).Handle;
+        $RegistryHandle2 = (($RegistryKey.OpenSubKey($key)).OpenSubKey($serial)).Handle;
         $Return = [advapi32]::RegQueryInfoKey(
             $RegistryHandle,
             $ClassName,
@@ -2068,9 +2073,25 @@ function Get-RemoteUSBLastWrite($ComputerName,$Credential){
             [ref]$Null,
             [ref]$TimeStamp
         );
-        [string]$dt = [datetime]::FromFileTime($Timestamp);
-        $dt = $dt.Trim();
-        Add-Content -Path "C:\lastwritetimes.csv" -Value ($key + ',' + $dt + ',' + $serial)
+        [string]$first = [datetime]::FromFileTime($Timestamp);
+        $first = $first.Trim();
+        $Return2 = [advapi32]::RegQueryInfoKey(
+            $RegistryHandle2,
+            $ClassName2,
+            [ref]$ClassLength,
+            $Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$TimeStamp
+        );
+        [string]$last = [datetime]::FromFileTime($Timestamp);
+        $last = $last.Trim();
+        Add-Content -Path "C:\usbwritetimes.csv" -Value ($key + ',' + $first + ',' + $last + ',' + $serial)
         }}
         Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + $scriptblock) -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
         }

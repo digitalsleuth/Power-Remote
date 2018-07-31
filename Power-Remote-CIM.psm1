@@ -1862,9 +1862,13 @@ function Get-RemoteUSB($ComputerName,$Credential){
 
     Write-ProgressHelper -StatusMessage "Grabbing First and Last Insert Dates for all USB devices discovered using setupapi.dev.log and Windows Event Logs from $ComputerName"
     Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverframeworks.csv"
-    Import-CSV $export_directory\$computerName-driveinfo.csv | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-driverframeworks.csv" | Where-Object {$_.message -match "$Serial"} | Select-Object TimeCreated, ID, OpCodeDisplayName, UserID, Message | Sort-Object TimeCreated -desc} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
-    $firstInsertDate = (Import-CSV $export_directory\$ComputerName-driveinfo.csv | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | select-string $Serial -SimpleMatch -context 1 } )
-    $firstInsertDate = $firstInsertDate  -replace "\r\n", "" -replace ">","" -replace "]","," -replace "Section start ","" -replace "\[Device Install \(Hardware initiated\) - ","DeviceInstall," -replace "    ",""| Where-Object {$_ -clike "*Install*"} >> "$export_directory\$ComputerName-usbfirstinsert.csv"
+    $driveinfo = Import-CSV $export_directory\$ComputerName-driveinfo.csv
+    $driver = Import-CSV $export_directory\$ComputerName-driverframeworks.csv
+    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $driver | Where-Object {$_.message -match "$Serial"} | Select-Object @{n="LastInsertDate";e={$_.TimeCreated}}, ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}} | Sort-Object LastInsertDate -desc -Unique} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
+    $firstInsertDate = $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | select-string $Serial -SimpleMatch -context 1 }
+    Add-Content -Path "$export_directory\$ComputerName-usbfirstinsert.csv" -Value ("Type,Device,FirstInsertDate")
+    $firstInsertDate = $firstInsertDate  -replace "\r\n", "" -replace ">","" -replace "]","," -replace "Section start ","" -replace "\[Device Install \(Hardware initiated\) - ","DeviceInstall," -replace "    ","" -replace "^ ",""| Where-Object {$_ -clike "*Install*"}
+    Add-Content -Path "$export_directory\$ComputerName-usbfirstinsert.csv" -Value ($firstInsertDate)
 
     Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
     Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + 'Get-Item HKLM:\System\CurrentControlSet\Enum\USB\*\* | Select-Object @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbvidpid.csv\"'} -CimSession $session -ErrorAction Stop | Out-Null
@@ -1876,7 +1880,6 @@ function Get-RemoteUSB($ComputerName,$Credential){
 
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
     $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={(($_.ASCII) -split "\#")[2]}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
-    $driveinfo = (Import-CSV $export_directory\$ComputerName-driveinfo.csv)
     Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
 
@@ -2037,6 +2040,124 @@ function Get-RemoteRecentFiles($ComputerName,$Credential){
     Get-RemoteRecentFiles $ComputerName $Credential
     }
 }
+
+<# WIP
+function Get-RemoteUSBLastWrite($ComputerName,$Credential){
+    if ($ComputerName -like '*.txt') {
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteUSBLastWrite $ComputerName $Credential
+        }
+    }
+    if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credname = $Credential
+        }
+    Elseif ($Credential -is [pscredential]) {
+        $credname = $Credential.UserName
+        }
+    $Credential = $script:Credential
+    Try {
+    $credsplat = @{}
+    if ($Credential -is [pscredential]){
+        $credsplat['Credential'] = $Credential
+    }
+    Elseif ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credSplat['Credential'] = (Get-Credential -Message "Username and Password Required" -UserName $credname)
+    }
+    Else {
+        $credsplat['Credential'] = $Credential
+    }
+    $powershell = "C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -command "
+    $export_directory = "$location\$ComputerName"
+    $net_path = "\\$ComputerName\C$"
+    $scriptblock = {$Domain = [AppDomain]::CurrentDomain;
+            $DynAssembly = New-Object System.Reflection.AssemblyName('RegAssembly');
+            $AssemblyBuilder = $Domain.DefineDynamicAssembly($DynAssembly, [System.Reflection.Emit.AssemblyBuilderAccess]::Run);
+            $ModuleBuilder = $AssemblyBuilder.DefineDynamicModule('RegistryTimeStampModule', $False);
+            $TypeBuilder = $ModuleBuilder.DefineType('advapi32', 'Public, Class');
+            $PInvokeMethod = $TypeBuilder.DefineMethod(
+                'RegQueryInfoKey',
+                [Reflection.MethodAttributes] 'PrivateScope, Public, Static, HideBySig, PinvokeImpl', 
+                [IntPtr], 
+                [Type[]] @(
+                    [Microsoft.Win32.SafeHandles.SafeRegistryHandle],
+                    [System.Text.StringBuilder],
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32],
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [UInt32 ].MakeByRefType(),
+                    [long].MakeByRefType()
+                )
+            );
+            $DllImportConstructor = [Runtime.InteropServices.DllImportAttribute].GetConstructor(@([String]));
+            $FieldArray = [Reflection.FieldInfo[]] @(       
+                [Runtime.InteropServices.DllImportAttribute].GetField('EntryPoint'),
+                [Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')
+            );
+            $FieldValueArray = [Object[]] @('RegQueryInfoKey',$True);
+            $SetLastErrorCustomAttribute = New-Object Reflection.Emit.CustomAttributeBuilder($DllImportConstructor,@('advapi32.dll'),$FieldArray,$FieldValueArray);
+            $PInvokeMethod.SetCustomAttribute($SetLastErrorCustomAttribute);
+            [void]$TypeBuilder.CreateType();
+            $ClassLength = 255;
+        [long]$TimeStamp = $null;
+        $RegistryKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'default').OpenSubKey('SYSTEM\CurrentControlSet\Enum\USBSTOR');
+        Add-Content -Path "C:\usbwritetimes.csv" -Value ('DeviceName,FirstWriteTime,LastWriteTime,Serial');
+        foreach ($key in $RegistryKey.GetSubKeyNames()){
+        $serial = $RegistryKey.OpenSubKey($key).GetSubKeyNames();
+        $ClassName = New-Object System.Text.StringBuilder ($RegistryKey.OpenSubKey($key)).Name;
+        $ClassName2 = New-Object System.Text.StringBuilder (($RegistryKey.OpenSubKey($key)).OpenSubKey($serial)).Name;
+        $RegistryHandle = ($RegistryKey.OpenSubKey($key)).Handle;
+        $RegistryHandle2 = (($RegistryKey.OpenSubKey($key)).OpenSubKey($serial)).Handle;
+        $Return = [advapi32]::RegQueryInfoKey(
+            $RegistryHandle,
+            $ClassName,
+            [ref]$ClassLength,
+            $Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$TimeStamp
+        );
+        [string]$first = [datetime]::FromFileTime($Timestamp);
+        $first = $first.Trim();
+        $Return2 = [advapi32]::RegQueryInfoKey(
+            $RegistryHandle2,
+            $ClassName2,
+            [ref]$ClassLength,
+            $Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$Null,
+            [ref]$TimeStamp
+        );
+        [string]$last = [datetime]::FromFileTime($Timestamp);
+        $last = $last.Trim();
+        Add-Content -Path "C:\usbwritetimes.csv" -Value ($key + ',' + $first + ',' + $last + ',' + $serial)
+        }}
+        Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + $scriptblock) -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
+        }
+        Catch [System.UnauthorizedAccessException] {
+    Write-ProgressHelper -StatusMessage "Username and Password Required"
+    Write-Output "Credentials Required"
+    $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
+    $script:Credential = $Credential
+    Get-RemoteUSBLastWrite $ComputerName $Credential
+    }
+}
+#>
 #Cleanup
 function Cleanup {
 #Ensure the Credential and Credname variables do not stick in the current environment
