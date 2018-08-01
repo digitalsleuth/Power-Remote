@@ -1806,11 +1806,11 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverframeworks.csv"
     $driveinfo = Import-CSV $export_directory\$ComputerName-driveinfo.csv
     $driver = Import-CSV $export_directory\$ComputerName-driverframeworks.csv
-    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $driver | Where-Object {$_.message -match "$Serial"} | Select-Object @{n="LastInsertDate";e={$_.TimeCreated}}, ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}} | Sort-Object LastInsertDate -desc -Unique} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
-    $firstInsertDate = (Import-CSV $export_directory\$ComputerName-driveinfo.csv | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | select-string $Serial -SimpleMatch -context 1 } )
-    Add-Content -Path "$export_directory\$ComputerName-usbfirstinsert.csv" -Value ("Type,Device,FirstInsertDate")
-    $firstInsertDate = $firstInsertDate  -replace "\r\n", "" -replace ">","" -replace "]","," -replace "Section start ","" -replace "\[Device Install \(Hardware initiated\) - ","DeviceInstall," -replace "    ","" -replace "^ ",""| Where-Object {$_ -clike "*Install*"}
-    Add-Content -Path "$export_directory\$ComputerName-usbfirstinsert.csv" -Value ($firstInsertDate)
+    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $driver | Where-Object {$_.message -match "$Serial"} | Select-Object @{n="LastInsert";e={$_.TimeCreated}}, ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}} | Sort-Object LastInsert -desc -Unique} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
+    $driveinfo | Select-Object Serial | ForEach-object {$Serial = $_.Serial; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | Select-string $serial -SimpleMatch -Context 0,1 | Select @{n="FirstInsert";e={($_.Context.PostContext[0]) -replace ">>>  Section Start ",""}}, @{n="Device";e={($_.Line) -replace ">>>  \[Device\ Install\ \(Hardware\ initiated\)\ -\ ","" -replace "\[",""}}, @{n="Serial";e={$serial}}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbfirstinsert.csv"
+    $lastInsert = Import-CSV $export_directory\$ComputerName-usblastinsert.csv
+    $firstInsert = Import-CSV $export_directory\$ComputerName-usbfirstinsert.csv
+    #Join-Object -Left $lastInsert -Right $firstInsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth
 
     Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
     Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + 'Get-Item HKLM:\System\CurrentControlSet\Enum\USB\*\* | Select-Object @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbvidpid.csv\"') -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
