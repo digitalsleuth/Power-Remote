@@ -1864,21 +1864,23 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverframeworks.csv"
     $driveinfo = Import-CSV $export_directory\$ComputerName-driveinfo.csv
     $driver = Import-CSV $export_directory\$ComputerName-driverframeworks.csv
-    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $driver | Where-Object {$_.message -match "$Serial"} | Select-Object @{n="LastInsert";e={$_.TimeCreated}}, ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}} | Sort-Object LastInsert -desc -Unique} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
-    $driveinfo | Select-Object Serial | ForEach-object {$Serial = $_.Serial; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | Select-string $serial -SimpleMatch -Context 0,1 | Select @{n="FirstInsert";e={($_.Context.PostContext[0]) -replace ">>>  Section Start ",""}}, @{n="Device";e={($_.Line) -replace ">>>  \[Device\ Install\ \(Hardware\ initiated\)\ -\ ","" -replace "\[",""}}, @{n="Serial";e={$serial}}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbfirstinsert.csv"
+    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $driver | Where-Object {$_.message -match "$Serial"} | Select-Object @{n="LastInsert";e={$_.TimeCreated}}, ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}} | Where {$_.message -notlike "*(27, 23)*" -and $_.message -notlike "*(27, 2)*"} | Sort-Object Serial -desc -Unique} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
+    $driveinfo | Select-Object Serial | ForEach-object {$Serial = $_.Serial; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | Select-string $serial -SimpleMatch -Context 0,1 | Select @{n="FirstInsert";e={[datetime](($_.Context.PostContext[0]) -replace ">>>  Section Start ","")}}, @{n="Device";e={($_.Line) -replace ">>>  \[Device\ Install\ \(Hardware\ initiated\)\ -\ ","" -replace "\]",""}}, @{n="Serial";e={$serial}}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbfirstinsert.csv"
     $lastInsert = Import-CSV $export_directory\$ComputerName-usblastinsert.csv
     $firstInsert = Import-CSV $export_directory\$ComputerName-usbfirstinsert.csv
+    Join-Object -left $firstInsert -right $lastInsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | select Device, FirstInsert, LastInsert, Serial, OpCodeDisplayName,UserID,Message,ID | Sort-Object Device -desc -Unique | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinserttimes.csv"
 
     Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
-    Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + 'Get-Item HKLM:\System\CurrentControlSet\Enum\USB\*\* | Select-Object @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbvidpid.csv\"'} -CimSession $session -ErrorAction Stop | Out-Null
+    Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + 'Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\USB\*\*\  | Select-Object @{n=\"Serial\";e={$_.PSChildName}}, @{n=\"VID_PID\";e={($_.HardWareID -split \"\\\\\")[1]}}, ContainerID | Export-CSV -NoTypeInformation \"$driveLetter\usbvidpid.csv\"'} -CimSession $session -ErrorAction Stop | Out-Null
     while (!(Test-Path ($drivemount + ":\usbvidpid.csv"))) {start-sleep -s 1}
     Copy-Item ($drivemount + ":\usbvidpid.csv") ("$export_directory\$ComputerName-usbvidpid.csv")
     Start-sleep -s 1
     while (!(Test-Path ("$export_directory\$ComputerName-usbvidpid.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\usbvidpid.csv") -Force
+    $usbvidpid = Import-CSV $export_directory\$ComputerName-usbvidpid.csv
 
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
-    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={(($_.ASCII) -split "\#")[2]}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
+    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&0$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
     Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
 
@@ -2041,6 +2043,7 @@ function Get-RemoteRecentFiles($ComputerName,$Credential){
 }
 
 <# WIP
+Change output of Serial number to strip the &
 function Get-RemoteUSBLastWrite($ComputerName,$Credential){
     if ($ComputerName -like '*.txt') {
         ForEach ($Computer in Get-Content $ComputerName) {
