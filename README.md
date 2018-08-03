@@ -25,10 +25,11 @@ It will grab the following if run start-to-finish:
 
 A folder will be created automatically in the current directory and given the name of the ComputerName 
 # Requirements
-This tool will require you have the winpmem executable from Rekall renamed to winpmem.exe, and stored in a folder named 'bin' in the directory the module is run from.
-It also requires the Join-Object.ps1 script, located in this repo, borrowed from Warren Frame (github.com/RamblingCookieMonster)
-Place the Join-Object.ps1 file in the directory where you will run the module.
-- Also requires that you change the Execution Policy to allow the scripts to run and run from either PowerShell or PowerShellISE as Local Administrator:
+This tool will require you:
+- have the winpmem executable from Rekall renamed to winpmem.exe, and stored in a folder named 'bin' in the directory the module is run from.
+- download the Join-Object.ps1 script, located in this repo, borrowed from Warren Frame (github.com/RamblingCookieMonster)
+- place the Join-Object.ps1 file in the directory where you will run the module.
+- change the Execution Policy to allow the scripts to run and run from either PowerShell or PowerShellISE as Local Administrator:
 `Set-ExecutionPolicy Bypass -Force` or `Set-ExecutionPolicy Unrestricted -Force`
 
 Script and functions can be executed in one of two ways:
