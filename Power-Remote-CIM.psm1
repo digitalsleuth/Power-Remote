@@ -1835,7 +1835,7 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Join-Object -Left $DriveVols -Right $UserMounts -LeftJoinProperty Volume -RightJoinProperty GUID -Type AllInBoth | Select-Object Drive,GUID,Volume,UserName,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldrives.csv"
 
     Write-ProgressHelper -StatusMessage "Retrieving USBSTOR and WpdBusEnum information from $ComputerName to get volume names"
-    Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\USBSTOR\*\* | Select-Object @{n=\"Serial\";e={$_.PSChildName}},@{n=\"Device\";e={$_.FriendlyName}},ContainerID,@{n=\"HardwareID\";e={($_.HardwareID)[0]}},@{n=\"Vendor_Product\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbstor.csv\"')} -CimSession $session -ErrorAction Stop | Out-Null
+    Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\USBSTOR\*\* | Select-Object @{n=\"Serial\";e={($_.PSChildName -replace \"&[0-9]$\",\"\")}},@{n=\"Device\";e={$_.FriendlyName}},ContainerID,@{n=\"HardwareID\";e={($_.HardwareID)[0]}},@{n=\"Vendor_Product\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbstor.csv\"')} -CimSession $session -ErrorAction Stop | Out-Null
     while (!(Test-Path ($drivemount + ":\usbstor.csv"))) {start-sleep -s 1}
     Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\WpdBusEnumRoot\UMB\* | Select-Object DeviceDesc,FriendlyName,ContainerID | Export-CSV -NoTypeInformation \"$driveLetter\wpdenum.csv\"')} -CimSession $session -ErrorAction Stop | Out-Null
     while (!(Test-Path ($drivemount + ":\wpdenum.csv"))) {start-sleep -s 1}
@@ -1879,12 +1879,26 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Remove-Item ($drivemount + ":\usbvidpid.csv") -Force
     $usbvidpid = Import-CSV $export_directory\$ComputerName-usbvidpid.csv
 
+    Write-ProgressHelper -StatusMessage "Getting USB First Insert and USBSTOR Key Last Write Times"
+    Get-RemoteUSBLastWrite $ComputerName @credsplat
+    Start-sleep -s 3
+    Copy-Item ($drivemount + ":\usbwritetimes.csv") ("$export_directory\$ComputerName-usbwritetimes.csv")
+    $lastwrite = (Import-CSV $export_directory\$ComputerName-usbwritetimes.csv)
+    Join-Object -Left $driveinfo -Right $lastwrite -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,FirstWriteTime,LastWriteTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
+    Remove-Item ($drivemount + ":\usbwritetimes.csv") -Force
+    $alldriveinfo = Import-CSV $export_directory\$ComputerName-alldriveinfo.csv
+    Join-Object -Left $alldriveinfo -Right $usbvidpid -LeftJoinProperty ContainerID -RightJoinProperty ContainerID -Type AllInLeft | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
+    $usbinsert = Import-CSV $export_directory\$ComputerName-usbinserttimes.csv
+    $alldriveinfo = Import-CSV $export_directory\$ComputerName-alldriveinfo.csv
+    Join-Object -left $alldriveinfo -right $usbinsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | Select Device, FriendlyName,Serial,HardWareID,Vendor_Product,VID_PID,ContainerID,FirstInsert,LastInsert,FirstWriteTime,LastWriteTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-finaldriveinfo.csv"
+
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
-    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&0$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
-    Join-Object -Left $driveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,ASCII,KeyValue | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
+    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&[0-9]$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
+    $finaldriveinfo = (Import-CSV $export_directory\$ComputerName-finaldriveinfo.csv)
+    Join-Object -Left $finaldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,VID_PID,KeyValue,ASCII,FirstInsert,LastInsert,FirstWriteTime,LastWriteTime | Sort-Object Drive | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinfo_complete.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
 
-    Import-CSV $export_directory\$ComputerName-usbinfo_complete.csv | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,ASCII | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html
+    Import-CSV $export_directory\$ComputerName-usbinfo_complete.csv | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,Guid,Volume,FirstInsert,LastInsert,LastWriteTime | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>" >> $export_directory\$ComputerName-basicinfo.html
     Write-ProgressHelper -StatusMessage "Remote USB Device Information retrieval complete." -StepNumber ($stepCounter++)
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     Remove-PSDrive $drivemount
@@ -2042,36 +2056,13 @@ function Get-RemoteRecentFiles($ComputerName,$Credential){
     }
 }
 
-<# WIP
-Change output of Serial number to strip the &
 function Get-RemoteUSBLastWrite($ComputerName,$Credential){
-    if ($ComputerName -like '*.txt') {
-        ForEach ($Computer in Get-Content $ComputerName) {
-        $ComputerName = $Computer
-        Get-RemoteUSBLastWrite $ComputerName $Credential
-        }
-    }
-    if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
-        $credname = $Credential
-        }
-    Elseif ($Credential -is [pscredential]) {
-        $credname = $Credential.UserName
-        }
-    $Credential = $script:Credential
     Try {
-    $credsplat = @{}
-    if ($Credential -is [pscredential]){
-        $credsplat['Credential'] = $Credential
-    }
-    Elseif ($Credential -ne $null -and $Credential -isnot [pscredential]) {
-        $credSplat['Credential'] = (Get-Credential -Message "Username and Password Required" -UserName $credname)
-    }
-    Else {
-        $credsplat['Credential'] = $Credential
-    }
     $powershell = "C:\windows\system32\WindowsPowerShell\v1.0\powershell.exe -command "
     $export_directory = "$location\$ComputerName"
     $net_path = "\\$ComputerName\C$"
+    $usbsession = New-CimSession -ComputerName $ComputerName -Credential $Credential -SessionOption $option
+    $usbsessID = $usbsession.Id
     $scriptblock = {$Domain = [AppDomain]::CurrentDomain;
             $DynAssembly = New-Object System.Reflection.AssemblyName('RegAssembly');
             $AssemblyBuilder = $Domain.DefineDynamicAssembly($DynAssembly, [System.Reflection.Emit.AssemblyBuilderAccess]::Run);
@@ -2147,9 +2138,10 @@ function Get-RemoteUSBLastWrite($ComputerName,$Credential){
         );
         [string]$last = [datetime]::FromFileTime($Timestamp);
         $last = $last.Trim();
-        Add-Content -Path "C:\usbwritetimes.csv" -Value ($key + ',' + $first + ',' + $last + ',' + $serial)
+        Add-Content -Path "C:\usbwritetimes.csv" -Value ($key + ',' + $first + ',' + $last + ',' + ($serial -replace '&[0-9]$',''))
         }}
-        Invoke-WmiMethod win32_process -Name Create -ArgumentList ($powershell + $scriptblock) -ComputerName $ComputerName @credsplat -ErrorAction Stop | Out-Null
+        Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + $scriptblock} -CimSession $usbSession -ErrorAction Stop | Out-Null
+        Remove-CimSession -Id $usbsessId
         }
         Catch [System.UnauthorizedAccessException] {
     Write-ProgressHelper -StatusMessage "Username and Password Required"
