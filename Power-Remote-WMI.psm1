@@ -2101,6 +2101,80 @@ function Get-RemoteUSBLastWrite($ComputerName,$Credential){
     Get-RemoteUSBLastWrite $ComputerName $Credential
     }
 }
+
+function Get-RemoteNetCap{
+param($ComputerName,[ValidateNotNullOrEmpty()]$Credential,[Parameter(Mandatory=$True)][int]$Timespan)
+    if ($ComputerName -like '*.txt') {
+        ForEach ($Computer in Get-Content $ComputerName) {
+        $ComputerName = $Computer
+        Get-RemoteNetCap $ComputerName $Credential $Timespan
+        }
+    }
+    if ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credname = $Credential
+        }
+    Elseif ($Credential -is [pscredential]) {
+        $credname = $Credential.UserName
+        }
+    $Credential = $script:Credential
+    Try {
+    $credsplat = @{}
+    if ($Credential -is [pscredential]){
+        $credsplat['Credential'] = $Credential
+    }
+    Elseif ($Credential -ne $null -and $Credential -isnot [pscredential]) {
+        $credSplat['Credential'] = (Get-Credential -Message "Username and Password Required" -UserName $credname)
+    }
+    Else {
+        $credsplat['Credential'] = $Credential
+    }
+    $export_directory = "$location\$ComputerName"
+    $net_path = "\\$ComputerName\C$"
+    $driveLetter = (Get-WmiObject win32_operatingsystem -ComputerName $ComputerName @credsplat | Select-Object -expand SystemDrive) + "\"
+    CheckExportDir
+    $drivemount = (Get-ChildItem function:[d-z]: -n | Where-Object { !(test-path $_) } | Select-Object -First 1) -replace ":",""
+    New-PSDrive -Name $drivemount -PSProvider filesystem -Root $net_path @credsplat | Out-Null
+    Write-ProgressHelper -StatusMessage "Getting $Timespan second traffic capture from $ComputerName" -StepNumber ($stepCounter++)
+    $netstart = "cmd /c netsh trace start capture=yes report=yes provider=Microsoft-Windows-TCPIP provider=Microsoft-Windows-Security-Netlogon tracefile="
+    $netstop = "cmd /c netsh trace stop"
+    $stamp = [int](Get-Date -UFormat %s)
+    $filename = ($ComputerName + '-' + [string]$stamp + '-capture.etl')
+    $cabfile = ($ComputerName + '-' + [string]$stamp + '-capture.cab')
+    Invoke-WmiMethod win32_process -Name Create -ArgumentList ($netstart + $driveLetter + $filename) -ComputerName $ComputerName @credsplat -ErrorAction SilentlyContinue | Out-Null
+    $Message = "Capture set for $Timespan seconds"
+    Write-ProgressHelper -StatusMessage "Capture started - will complete in $Timespan seconds" -StepNumber ($stepCounter++) 
+    foreach ($second in (1..$Timespan)){$Multiplier = (100 / $Timespan); Write-Progress -Id 1 -Activity $Message -Status "$($Timespan - $second) seconds remaining" -PercentComplete (($Timespan - $second) * $Multiplier) ; start-sleep -s 1 }
+    Write-Progress -Activity 'Completed' -Completed -Id 1
+    #Write-Output "Capture started - will complete in $Timespan seconds"
+    #Start-Sleep -s $Timespan
+    Write-Output "Capture time met - stopping capture"
+    Write-ProgressHelper -StatusMessage "Capture time met - stopping capture" -StepNumber ($stepCounter++)
+    Invoke-WmiMethod win32_process -name Create -ArgumentList ($netstop) -ComputerName $ComputerName @credsplat -ErrorAction SilentlyContinue | Out-Null
+    while (!(Test-Path ("$drivemount`:\$cabfile"))){start-sleep -s 1}
+    Write-ProgressHelper -StatusMessage "Copying Files" -StepNumber ($stepCounter++)
+    Write-Output "Copying Files"
+    Copy-Item ("$drivemount`:\$filename") ("$export_directory\$filename")
+    Copy-Item ("$drivemount`:\$cabfile") ("$export_directory\$cabfile")
+    while (!(Test-Path ("$export_directory\$cabfile"))){Start-Sleep -s 1}
+    Remove-Item ("$drivemount`:\$filename") -Force
+    Remove-Item ("$drivemount`:\$cabfile") -Force
+    Write-ProgressHelper -StatusMessage "Copy Complete" -StepNumber ($stepCounter++)
+    Write-Output "Copy Complete"
+    Remove-PSDrive $drivemount
+    Write-ProgressHelper -StatusMessage "Converting trace to CSV" -StepNumber ($stepCounter++)
+    Write-Output "Converting trace to CSV"
+    & netsh trace convert input="$export_directory\$filename" output="$export_directory\$filename.csv" dump=CSV| Out-Null
+    Write-Output "Conversion complete"
+    Write-ProgressHelper -StatusMessage "Conversion complete" -StepNumber ($stepCounter++)
+        }
+    Catch [System.UnauthorizedAccessException] {
+    Write-ProgressHelper -StatusMessage "Username and Password Required"
+    Write-Output "Credentials Required"
+    $Credential = Get-Credential -Message "Username and Password Required" -UserName $credname
+    $script:Credential = $Credential
+    Get-RemoteNetCap $ComputerName $Credential $Timespan
+    }
+}
 #Cleanup
 function Cleanup {
 #Ensure the Credential and Credname variables do not stick in the current environment
