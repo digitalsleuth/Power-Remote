@@ -22,6 +22,7 @@ It will grab the following if run start-to-finish:
 - Netstat Information
 - Event Logs (Security - 4624,4625,4634,4698-4702; System - 6005,6005)
 - Installed Applications
+- ADDED: Network Capture using netsh trace
 
 A folder will be created automatically in the current directory and given the name of the ComputerName 
 # Requirements
