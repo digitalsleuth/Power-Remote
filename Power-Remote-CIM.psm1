@@ -134,14 +134,13 @@ function RemoteRunAll($ComputerName,$Credential){
     Try {
         $script:credname = $Credential
         Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
-        $functions = @('Get-RemotePCInfo','Get-RemoteApplication','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvent','Get-RemoteAuditLog', 'Get-RemoteUserEvent', 'Get-RemoteUserChange','Get-RemotePasswordEvent','Get-RemoteGroupEvent','Get-RemoteGroupChange','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvent','Get-RemoteSvcStatusEvent','Get-RemoteSvcInstallEvent','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB')#,'Get-RemoteMemoryDump')
+        $functions = @('Get-RemotePCInfo','Get-RemoteApplication','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvent','Get-RemoteAuditLog', 'Get-RemoteUserEvent', 'Get-RemoteUserChange','Get-RemotePasswordEvent','Get-RemoteGroupEvent','Get-RemoteGroupChange','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvent','Get-RemoteSvcStatusEvent','Get-RemoteSvcInstallEvent','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB','Get-RemoteMemoryDump')
         Get-RemoteNetCap $ComputerName $Credential -Timespan 30
         foreach ($func in $functions){
         Write-ProgressHelper -StatusMessage "Starting $func" -StepNumber ($stepCounter++)
         & $func $ComputerName $Credential
             }
         CleanUp
-        #Remove-CimSession -ComputerName $ComputerName | Out-Null
         }
     Catch [System.UnauthorizedAccessException] {
 
@@ -295,7 +294,6 @@ function Get-RemoteAuditStatus($ComputerName,$Credential){
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Successful/Failed Logon attempts on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $logontype4624 = @{n="LogonType";e={($_.InsertionStrings[8])}}
     $SID4624 = @{n="SID";e={$_.InsertionStrings[4]}}
     $accountname4624 = @{n="AccountName";e={$_.InsertionStrings[5]}}
@@ -311,8 +309,8 @@ function Get-RemoteAuditStatus($ComputerName,$Credential){
     $workstationname4625 = @{n="WorkstationName";e={$_.InsertionStrings[13]}}
     $sourcenetwork4625 = @{n="SourceNetworkAddress";e={$_.InsertionStrings[19]}}
     $filter4625 = "(logfile='Security' AND EventCode='4625')"
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4624 | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, $logontype4624, $SID4624, $accountname4624, $loginid4624, $sourcenetwork4624 | Export-CSV -Path "$export_directory\$ComputerName-4624.csv" -NoTypeInformation
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4625 | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, $logontype4625, $SID4625, $accountname4625, $failuretype4625, $failuresubtype4625, $workstationname4625, $sourcenetwork4625 | Export-CSV -Path "$export_directory\$ComputerName-4625.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4624 | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventIdentifier, $logontype4624, $SID4624, $accountname4624, $loginid4624, $sourcenetwork4624 | Export-CSV -Path "$export_directory\$ComputerName-4624.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4625 | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventIdentifier, $logontype4625, $SID4625, $accountname4625, $failuretype4625, $failuresubtype4625, $workstationname4625, $sourcenetwork4625 | Export-CSV -Path "$export_directory\$ComputerName-4625.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -358,13 +356,12 @@ function Get-RemoteAccountLogoff($ComputerName,$Credential){
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Logoffs on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $logofftype = @{n="LogonType";e={$_.InsertionStrings[4]}}
     $SID = @{n="SID";e={$_.InsertionStrings[0]}}
     $accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
     $loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
     $filter = "(logfile='Security' AND EventCode='4634')"
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, Type, $logofftype, $SID, $accountname, $loginid | Export-CSV -Path "$export_directory\$ComputerName-4634.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventIdentifier, Type, $logofftype, $SID, $accountname, $loginid | Export-CSV -Path "$export_directory\$ComputerName-4634.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -410,13 +407,12 @@ function Get-RemoteTaskEvent($ComputerName,$Credential){
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for New and Modified Scheduled Tasks on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $SID = @{n="SID";e={$_.InsertionStrings[0]}}
     $accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
     $loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
     $exec = @{n="Exec";e={$_.InsertionStrings[5] -replace "`r`n", "" -Match "<Exec>\s{0,}(.*)</Exec"}}
     $filter = "(logfile='Security' AND (EventCode='4698' OR EventCode='4699' OR EventCode='4700' OR EventCode='4701' OR EventCode='4702'))"
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, $SID, $accountname, $loginid, $exec | Export-CSV -Path "$export_directory\$ComputerName-4698-4702.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventIdentifier, $SID, $accountname, $loginid, $exec | Export-CSV -Path "$export_directory\$ComputerName-4698-4702.csv" -NoTypeInformation
     Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = 'Microsoft-Windows-TaskScheduler/Operational'; Id = 106,140,141,200,201} -ErrorAction SilentlyContinue | Select-Object TimeCreated,Id,UserID,AccountName,LoginID,@{n="Exec";e={($_.Message -split ",")[0]}} | Export-CSV -Path "$export_directory\$ComputerName-TaskScheduler.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
@@ -460,13 +456,12 @@ function Get-RemoteAuditLog($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Audit Clearing on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $SID = @{n="SID";e={$_.InsertionStrings[0]}}
     $user = @{n="User";e={$_.InsertionStrings[1]}}
     $CompName = @{n="Computer Name";e={$_.InsertionStrings[2]}}
     $logonID = @{n="Logon ID";e={$_.InsertionStrings[3]}}
     $filter = "(logfile='Security' AND EventCode='1102')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $User, $SID, $CompName, $logonID, Type | Export-CSV -Path "$export_directory\$ComputerName-1102.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $User, $SID, $CompName, $logonID, Type | Export-CSV -Path "$export_directory\$ComputerName-1102.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -509,7 +504,6 @@ function Get-RemoteUserEvent($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Added/Deleted Accounts/Computers on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
     $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
     $ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[2]}}
@@ -518,7 +512,7 @@ function Get-RemoteUserEvent($ComputerName,$Credential) {
     $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4720' OR EventCode='4722' OR EventCode='4725' OR EventCode='4726' OR EventCode='4738' OR EventCode='4741' OR EventCode='4743'))"
-    Get-CimInstance win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userevents.csv" -NoTypeInformation
+    Get-CimInstance win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -561,7 +555,6 @@ function Get-RemoteUserChange($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Changed Accounts/Computers on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[1]}}
     $ModifiedDomain = @{n="Modified Acct Domain";e={$_.InsertionStrings[2]}}
     $ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[3]}}
@@ -574,7 +567,7 @@ function Get-RemoteUserChange($ComputerName,$Credential) {
     $NewUAC =  @{n="New UAC";e={$_.InsertionStrings[22]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND EventCode='4738')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $ModifiedDomain, $OldUAC, $NewUAC, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userchanges.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $ModifiedDomain, $OldUAC, $NewUAC, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userchanges.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -617,7 +610,6 @@ function Get-RemotePasswordEvent($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Password Changes/Resets on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ModifiedAccount = @{n="Modified Account";e={$_.InsertionStrings[0]}}
     $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[1]}}
     $ModifiedSID = @{n="Modified SID";e={$_.InsertionStrings[2]}}
@@ -626,7 +618,7 @@ function Get-RemotePasswordEvent($ComputerName,$Credential) {
     $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4723' OR EventCode='4724'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter  | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-passwordevents.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter  | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-passwordevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -669,7 +661,6 @@ function Get-RemoteGroupEvent($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Groups Created/Deleted/Modified on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $MemberAccount = @{n="Member Account";e={$_.InsertionStrings[0]}}
     $MemberSID = @{n="Member SID";e={$_.InsertionStrings[1]}}
     $MemberGroup = @{n="Member Group";e={$_.InsertionStrings[2]}}
@@ -681,7 +672,7 @@ function Get-RemoteGroupEvent($ComputerName,$Credential) {
     $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[8]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4727' OR EventCode='4730' OR EventCode='4731' OR EventCode='4734'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $MemberAccount, $MemberSID, $MemberGroup, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupevents.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $MemberAccount, $MemberSID, $MemberGroup, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -724,7 +715,6 @@ function Get-RemoteGroupChange($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Add/Delete/Change to Groups on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $GroupName = @{n="Group Name";e={$_.InsertionStrings[0]}}
     $GroupDomain = @{n="Group Domain";e={$_.InsertionStrings[1]}}
     $GroupSID = @{n="Group SID";e={$_.InsertionStrings[2]}}
@@ -734,7 +724,7 @@ function Get-RemoteGroupChange($ComputerName,$Credential) {
     $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[6]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4728' OR EventCode='4729' OR EventCode='4732' OR EventCode='4733' OR EventCode='4735'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $GroupName, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupchanges.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $GroupName, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupchanges.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -777,7 +767,6 @@ function Get-RemoteRunAs($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for RunAs attempts on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
     $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
     $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[2]}}
@@ -791,7 +780,7 @@ function Get-RemoteRunAs($ComputerName,$Credential) {
     $ProcessName = @{n="Process Name";e={$_.InsertionStrings[11]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND EventCode='4648')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $OriginatingLogonGUID, $TargetUser, $TargetDomain, $TargetGUID, $TargetServer, $ProcessID, $ProcessName, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-runas.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $OriginatingLogonGUID, $TargetUser, $TargetDomain, $TargetGUID, $TargetServer, $ProcessID, $ProcessName, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-runas.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -834,7 +823,6 @@ function Get-RemoteSpecialPriv($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Security Event Logs for Special Privileges on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="Time Generated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $OriginatingSID = @{n="Originating SID";e={$_.InsertionStrings[0]}}
     $OriginatingUser = @{n="Originating User";e={$_.InsertionStrings[1]}}
     $AcctDomain = @{n="Account Domain";e={$_.InsertionStrings[2]}}
@@ -842,7 +830,7 @@ function Get-RemoteSpecialPriv($ComputerName,$Credential) {
     $Privileges = @{n="Privileges";e={$_.InsertionStrings[4] -replace '\n','' -replace '\t\t\t',';'}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND EventCode='4672')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $Privileges, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-privevents.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $Privileges, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-privevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -930,9 +918,8 @@ function Get-RemotePowerEvent($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking System Event Logs for Startup/PowerOff/Reboot/Dirty Shutdown on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $filter = "(logfile='System' AND (EventCode='6005' OR EventCode='6006' OR EventCode='6008'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -975,11 +962,10 @@ function Get-RemoteSvcStatusEvent($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking System Event Logs for Service Start/Stop/Restart/Running on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
     $ServiceStatus = @{n="Service Status";e={$_.InsertionStrings[1]}}
     $filter = "(logfile='System' AND EventCode='7036')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ServiceName, $ServiceStatus, @{l="HostName";e={$_.ComputerName}} | Export-CSV -Path "$export_directory\$ComputerName-7036.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $ServiceName, $ServiceStatus, @{l="HostName";e={$_.ComputerName}} | Export-CSV -Path "$export_directory\$ComputerName-7036.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1022,14 +1008,13 @@ function Get-RemoteSvcInstallEvent($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking System Event Logs for Service Installs on $ComputerName" -StepNumber ($stepCounter++)
-    $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
     $ServiceFileName = @{n="Service File Name";e={$_.InsertionStrings[1]}}
     $ServiceType = @{n="Service Type";e={$_.InsertionStrings[2]}}
     $ServiceStartType = @{n="Service Start Type";e={$_.InsertionStrings[3]}}
     $user = @{n="User";e={($_.User -split '\\')[1]}}
     $filter = "(logfile='System' AND EventCode='7045')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ServiceName, $ServiceFileName, $ServiceType, $ServiceStartType, $User | Export-CSV -Path "$export_directory\$ComputerName-7045.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},TimeGenerated, EventCode, $ServiceName, $ServiceFileName, $ServiceType, $ServiceStartType, $User | Export-CSV -Path "$export_directory\$ComputerName-7045.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
