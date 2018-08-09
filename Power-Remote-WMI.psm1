@@ -135,7 +135,7 @@ function RemoteRunAll($ComputerName,$Credential){
         $script:credname = $Credential
         #$Credential = $script:Credential
         Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
-        $functions = @('Get-RemotePCInfo','Get-RemoteApplication','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvent','Get-RemoteAuditLog', 'Get-RemoteUserEvent', 'Get-RemoteUserChange','Get-RemotePasswordEvent','Get-RemoteGroupEvent','Get-RemoteGroupChange','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvent','Get-RemoteSvcStatusEvent','Get-RemoteSvcInstallEvent','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB', 'Get-RemoteRecentFiles')#,'Get-RemoteMemoryDump')
+        $functions = @('Get-RemotePCInfo','Get-RemoteApplication','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvent','Get-RemoteAuditLog', 'Get-RemoteUserEvent', 'Get-RemoteUserChange','Get-RemotePasswordEvent','Get-RemoteGroupEvent','Get-RemoteGroupChange','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvent','Get-RemoteSvcStatusEvent','Get-RemoteSvcInstallEvent','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB', 'Get-RemoteRecentFiles','Get-RemoteMemoryDump')
         Get-RemoteNetCap $ComputerName $Credential -Timespan 30
         foreach ($func in $functions){
         Write-ProgressHelper -StatusMessage "Starting $func" -StepNumber ($stepCounter++)
@@ -1208,7 +1208,7 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
     Remove-Item $export_directory\$ComputerName-scheduledtask.csv -Force
     Add-Content -Path "$export_directory\$ComputerName-netstats.csv" -Value ("Protocol,LocalAddress,ForeignAddress,State,PID")
     Add-Content -Path "$export_directory\$ComputerName-netstats.csv" -Value (Get-Content "$export_directory\$ComputerName-nets.csv" | Select -skip 2)
-    Import-CSV "$export_directory\$ComputerName-netstats.csv" | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-netstat.csv"
+    Import-CSV "$export_directory\$ComputerName-netstats.csv" | Select @{l="ComputerName";e={$ComputerName}},Protocol,LocalAddress,ForeignAddress,@{n="State";e={if($_.Protocol -like 'UDP*'){'N/A'}else{$_.State}}},@{n="PID";e={if($_.Protocol -like 'UDP*'){$_.State}else{$_.PID}}}  | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-netstat.csv"
     Remove-Item "$export_directory\$ComputerName-nets.csv" -Force
     Remove-Item "$export_directory\$ComputerName-scheds.csv" -Force
     Remove-Item "$export_directory\$ComputerName-netstats.csv" -Force
@@ -1857,7 +1857,7 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Import-CSV $export_directory\$ComputerName-usbfirstsincereboots.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-usbfirstsincereboot.csv
     Remove-Item $export_directory\$ComputerName-usbfirstsincereboots.csv -Force
     $firstsince = (Import-CSV $export_directory\$ComputerName-usbfirstsincereboot.csv)
-    Join-Object -Left $lastwrite -right $firstsince -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select ComputerName,@{n="VID_PID";e={$_.Device}},Serial,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbwritetimes.csv"
+    Join-Object -Left $lastwrite -right $firstsince -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select ComputerName,VID_PID,Serial,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbwritetimes.csv"
     $writetimes = (Import-CSV $export_directory\$ComputerName-usbwritetimes.csv)
     Join-Object -Left $driveinfo -Right $writetimes -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | Select ComputerName,Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
     Remove-Item ($drivemount + ":\usblastwrite.csv") -Force
@@ -1869,7 +1869,7 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Join-Object -left $alldriveinfo -right $usbinsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select ComputerName, Device, FriendlyName,Serial,HardWareID,Vendor_Product,VID_PID,ContainerID,FirstInsert,@{n="FirstInsertSinceReboot";e={[datetime]$_.FirstInsertSinceReboot}},LastInsert,@{n="LastWrite";e={[datetime]$_.LastWrite}},LastRemoved | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-finaldriveinfo.csv"
 
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
-    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object @{l="ComputerName";e={$ComputerName}},Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&[0-9]$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
+    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object ComputerName,Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&[0-9]$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
     $finaldriveinfo = (Import-CSV $export_directory\$ComputerName-finaldriveinfo.csv)
     Join-Object -Left $finaldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object ComputerName,Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,VID_PID,KeyValue,ASCII,FirstInsert,FirstInsertSinceReboot,LastInsert,LastWrite,LastRemoved | Sort-Object Drive -Descending | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-device_info.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
@@ -2185,7 +2185,7 @@ param($ComputerName,[ValidateNotNullOrEmpty()]$Credential,[Parameter(Mandatory=$
     Remove-Item ("$drivemount`:\$cabfile") -Force
     Write-ProgressHelper -StatusMessage "Copy Complete" -StepNumber ($stepCounter++)
     Write-Output "Copy Complete"
-    Remove-PSDrive $drivemount
+    Remove-PSDrive $drivemount | Out-Null
     Write-ProgressHelper -StatusMessage "Converting trace to CSV" -StepNumber ($stepCounter++)
     Write-Output "Converting trace to CSV"
     & netsh trace convert input="$export_directory\$filename" output="$export_directory\$filename.csv" dump=CSV| Out-Null

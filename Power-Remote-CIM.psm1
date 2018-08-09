@@ -134,14 +134,14 @@ function RemoteRunAll($ComputerName,$Credential){
     Try {
         $script:credname = $Credential
         Write-ProgressHelper -StatusMessage "Running All Functions against $ComputerName"
-        $functions = @('Get-RemotePCInfo','Get-RemoteApplication','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvent','Get-RemoteAuditLog', 'Get-RemoteUserEvent', 'Get-RemoteUserChange','Get-RemotePasswordEvent','Get-RemoteGroupEvent','Get-RemoteGroupChange','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvent','Get-RemoteSvcStatusEvent','Get-RemoteSvcInstallEvent','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB','Get-RemoteMemoryDump')
+        $functions = @('Get-RemotePCInfo','Get-RemoteApplication','Get-RemoteAuditStatus','Get-RemoteAccountLogoff','Get-RemoteTaskEvent','Get-RemoteAuditLog', 'Get-RemoteUserEvent', 'Get-RemoteUserChange','Get-RemotePasswordEvent','Get-RemoteGroupEvent','Get-RemoteGroupChange','Get-RemoteRunAs','Get-RemoteSpecialPriv','Get-RemoteSRPBlock','Get-RemotePowerEvent','Get-RemoteSvcStatusEvent','Get-RemoteSvcInstallEvent','Get-RemoteProcesses', 'Get-RemoteServicesActive','Get-RemoteArtifacts','Get-RemoteWirelessInfo','Get-RemoteAppCompat','Get-RemoteUSB')#,'Get-RemoteMemoryDump')
+        Get-RemoteNetCap $ComputerName $Credential -Timespan 30
         foreach ($func in $functions){
         Write-ProgressHelper -StatusMessage "Starting $func" -StepNumber ($stepCounter++)
-        
         & $func $ComputerName $Credential
             }
         CleanUp
-        Remove-CimSession -ComputerName $ComputerName | Out-Null
+        #Remove-CimSession -ComputerName $ComputerName | Out-Null
         }
     Catch [System.UnauthorizedAccessException] {
 
@@ -249,7 +249,7 @@ function Get-RemoteApplication($ComputerName,$Credential) {
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Installed software for $ComputerName" -StepNumber ($stepCounter++)
-    Get-CimInstance Win32_Product -CimSession $session | Select-Object Name,InstallDate,ProductID,Vendor,Version | Export-CSV -Path "$export_directory\$ComputerName-applications.csv" -NoTypeInformation
+    Get-CimInstance Win32_Product -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},Name,InstallDate,ProductID,Vendor,Version | Export-CSV -Path "$export_directory\$ComputerName-applications.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -311,8 +311,8 @@ function Get-RemoteAuditStatus($ComputerName,$Credential){
     $workstationname4625 = @{n="WorkstationName";e={$_.InsertionStrings[13]}}
     $sourcenetwork4625 = @{n="SourceNetworkAddress";e={$_.InsertionStrings[19]}}
     $filter4625 = "(logfile='Security' AND EventCode='4625')"
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4624 | Select-Object $TimeGenerated, EventIdentifier, $logontype4624, $SID4624, $accountname4624, $loginid4624, $sourcenetwork4624 | Export-CSV -Path "$export_directory\$ComputerName-4624.csv" -NoTypeInformation
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4625 | Select-Object $TimeGenerated, EventIdentifier, $logontype4625, $SID4625, $accountname4625, $failuretype4625, $failuresubtype4625, $workstationname4625, $sourcenetwork4625 | Export-CSV -Path "$export_directory\$ComputerName-4625.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4624 | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, $logontype4624, $SID4624, $accountname4624, $loginid4624, $sourcenetwork4624 | Export-CSV -Path "$export_directory\$ComputerName-4624.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter4625 | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, $logontype4625, $SID4625, $accountname4625, $failuretype4625, $failuresubtype4625, $workstationname4625, $sourcenetwork4625 | Export-CSV -Path "$export_directory\$ComputerName-4625.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -364,7 +364,7 @@ function Get-RemoteAccountLogoff($ComputerName,$Credential){
     $accountname = @{n="AccountName";e={$_.InsertionStrings[1]}}
     $loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
     $filter = "(logfile='Security' AND EventCode='4634')"
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventIdentifier, Type, $logofftype, $SID, $accountname, $loginid | Export-CSV -Path "$export_directory\$ComputerName-4634.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, Type, $logofftype, $SID, $accountname, $loginid | Export-CSV -Path "$export_directory\$ComputerName-4634.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -416,7 +416,7 @@ function Get-RemoteTaskEvent($ComputerName,$Credential){
     $loginid = @{n="LogonID";e={$_.InsertionStrings[3]}}
     $exec = @{n="Exec";e={$_.InsertionStrings[5] -replace "`r`n", "" -Match "<Exec>\s{0,}(.*)</Exec"}}
     $filter = "(logfile='Security' AND (EventCode='4698' OR EventCode='4699' OR EventCode='4700' OR EventCode='4701' OR EventCode='4702'))"
-    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventIdentifier, $SID, $accountname, $loginid, $exec | Export-CSV -Path "$export_directory\$ComputerName-4698-4702.csv" -NoTypeInformation
+    Get-CimInstance Win32_NtLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventIdentifier, $SID, $accountname, $loginid, $exec | Export-CSV -Path "$export_directory\$ComputerName-4698-4702.csv" -NoTypeInformation
     Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = 'Microsoft-Windows-TaskScheduler/Operational'; Id = 106,140,141,200,201} -ErrorAction SilentlyContinue | Select-Object TimeCreated,Id,UserID,AccountName,LoginID,@{n="Exec";e={($_.Message -split ",")[0]}} | Export-CSV -Path "$export_directory\$ComputerName-TaskScheduler.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
@@ -466,7 +466,7 @@ function Get-RemoteAuditLog($ComputerName,$Credential) {
     $CompName = @{n="Computer Name";e={$_.InsertionStrings[2]}}
     $logonID = @{n="Logon ID";e={$_.InsertionStrings[3]}}
     $filter = "(logfile='Security' AND EventCode='1102')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $User, $SID, $CompName, $logonID, Type | Export-CSV -Path "$export_directory\$ComputerName-1102.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $User, $SID, $CompName, $logonID, Type | Export-CSV -Path "$export_directory\$ComputerName-1102.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -518,7 +518,7 @@ function Get-RemoteUserEvent($ComputerName,$Credential) {
     $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4720' OR EventCode='4722' OR EventCode='4725' OR EventCode='4726' OR EventCode='4738' OR EventCode='4741' OR EventCode='4743'))"
-    Get-CimInstance win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userevents.csv" -NoTypeInformation
+    Get-CimInstance win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -574,7 +574,7 @@ function Get-RemoteUserChange($ComputerName,$Credential) {
     $NewUAC =  @{n="New UAC";e={$_.InsertionStrings[22]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND EventCode='4738')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $ModifiedDomain, $OldUAC, $NewUAC, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userchanges.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $ModifiedDomain, $OldUAC, $NewUAC, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-userchanges.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -626,7 +626,7 @@ function Get-RemotePasswordEvent($ComputerName,$Credential) {
     $OriginatorLogonID = @{n="Logon ID";e={$_.InsertionStrings[6]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4723' OR EventCode='4724'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter  | Select-Object $TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-passwordevents.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter  | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ModifiedAccount, $ModifiedSID, $OriginatingUser, $OriginatingSID, $OriginatorLogonID, $AcctDomain, Type, $message | Export-CSV -Path "$export_directory\$ComputerName-passwordevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -681,7 +681,7 @@ function Get-RemoteGroupEvent($ComputerName,$Credential) {
     $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[8]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4727' OR EventCode='4730' OR EventCode='4731' OR EventCode='4734'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $MemberAccount, $MemberSID, $MemberGroup, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupevents.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $MemberAccount, $MemberSID, $MemberGroup, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -734,7 +734,7 @@ function Get-RemoteGroupChange($ComputerName,$Credential) {
     $OriginatingLogonID = @{n="Originating LogonID";e={$_.InsertionStrings[6]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND (EventCode='4728' OR EventCode='4729' OR EventCode='4732' OR EventCode='4733' OR EventCode='4735'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $GroupName, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupchanges.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $GroupName, $GroupSID, $GroupDomain, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-groupchanges.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -791,7 +791,7 @@ function Get-RemoteRunAs($ComputerName,$Credential) {
     $ProcessName = @{n="Process Name";e={$_.InsertionStrings[11]}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND EventCode='4648')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $OriginatingLogonGUID, $TargetUser, $TargetDomain, $TargetGUID, $TargetServer, $ProcessID, $ProcessName, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-runas.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $OriginatingLogonGUID, $TargetUser, $TargetDomain, $TargetGUID, $TargetServer, $ProcessID, $ProcessName, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-runas.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -842,7 +842,7 @@ function Get-RemoteSpecialPriv($ComputerName,$Credential) {
     $Privileges = @{n="Privileges";e={$_.InsertionStrings[4] -replace '\n','' -replace '\t\t\t',';'}}
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $filter = "(logfile='Security' AND EventCode='4672')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $Privileges, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-privevents.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $OriginatingUser, $OriginatingSID, $OriginatingLogonID, $Privileges, $AcctDomain, $message, Type | Export-CSV -Path "$export_directory\$ComputerName-privevents.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -887,7 +887,7 @@ function Get-RemoteSRPBlock($ComputerName,$Credential) {
     Write-ProgressHelper -StatusMessage "Checking Application Event Logs for Software Restriction Policy on $ComputerName" -StepNumber ($stepCounter++)
     #Need Sample of SRP event to determine format for output
     $filter = "(logfile='Application' AND EventCode='866')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object * | Export-CSV -Path "$export_directory\$ComputerName-srp.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},* | Export-CSV -Path "$export_directory\$ComputerName-srp.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -932,7 +932,7 @@ function Get-RemotePowerEvent($ComputerName,$Credential) {
     Write-ProgressHelper -StatusMessage "Checking System Event Logs for Startup/PowerOff/Reboot/Dirty Shutdown on $ComputerName" -StepNumber ($stepCounter++)
     $TimeGenerated = @{n="TimeGenerated";e={$_.ConvertToDateTime($_.TimeGenerated)}}
     $filter = "(logfile='System' AND (EventCode='6005' OR EventCode='6006' OR EventCode='6008'))"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, Message | Export-CSV -Path "$export_directory\$ComputerName-power.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -979,7 +979,7 @@ function Get-RemoteSvcStatusEvent($ComputerName,$Credential) {
     $ServiceName = @{n="Service Name";e={$_.InsertionStrings[0]}}
     $ServiceStatus = @{n="Service Status";e={$_.InsertionStrings[1]}}
     $filter = "(logfile='System' AND EventCode='7036')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $ServiceName, $ServiceStatus, ComputerName | Export-CSV -Path "$export_directory\$ComputerName-7036.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ServiceName, $ServiceStatus, @{l="HostName";e={$_.ComputerName}} | Export-CSV -Path "$export_directory\$ComputerName-7036.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1029,7 +1029,7 @@ function Get-RemoteSvcInstallEvent($ComputerName,$Credential) {
     $ServiceStartType = @{n="Service Start Type";e={$_.InsertionStrings[3]}}
     $user = @{n="User";e={($_.User -split '\\')[1]}}
     $filter = "(logfile='System' AND EventCode='7045')"
-    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object $TimeGenerated, EventCode, $ServiceName, $ServiceFileName, $ServiceType, $ServiceStartType, $User | Export-CSV -Path "$export_directory\$ComputerName-7045.csv" -NoTypeInformation
+    Get-CimInstance Win32_NTLogEvent -CimSession $session -Filter $filter | Select-Object @{l="ComputerName";e={$ComputerName}},$TimeGenerated, EventCode, $ServiceName, $ServiceFileName, $ServiceType, $ServiceStartType, $User | Export-CSV -Path "$export_directory\$ComputerName-7045.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1077,7 +1077,7 @@ function Get-RemoteRDPEvent($ComputerName,$Credential) {
     $message = @{n="Message";e={($_.Message -split '\n')[0] -replace "\r","" }}
     $sessionID = @{n="Session ID";e={(($_.Message -split '\n')[3] -replace "\r","" -split " ")[2] }}
     $netAddress = @{n="Source Network Address";e={(($_.Message -split '\n')[4] -replace "\r","" -split " ")[3] }}
-    Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"} | Select-Object TimeCreated, id, $sessionID, $domain, $user, $netAddress, $message | Export-CSV -Path "$export_directory\$ComputerName-rdp.csv" -NoTypeInformation
+    Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"} | Select-Object @{l="ComputerName";e={$ComputerName}},TimeCreated, id, $sessionID, $domain, $user, $netAddress, $message | Export-CSV -Path "$export_directory\$ComputerName-rdp.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1121,8 +1121,8 @@ function Get-RemoteProcesses($ComputerName,$Credential){
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Running Processes on $ComputerName" -StepNumber ($stepCounter++)
     $CreationDate = @{n="CreationDate";e={$_.ConvertToDateTime($_.CreationDate)}}
-    Get-CimInstance Win32_Process -CimSession $session | Select-Object Name,Description,$CreationDate,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$ComputerName-processes.csv" -NoTypeInformation
-    Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -CimSession $session | Select-Object @{n="Process Name";e={$_.Name}},@{n="PID";e={$_.IDProcess}},@{n="PPID";e={$_.CreatingProcessID}},@{n="CPU(%)";e={$_.PercentProcessorTime}},@{n="Memory_Usage(MB)";e={[Math]::Round(($_.workingSetPrivate /1mb),2)}},@{n="RunningTime(Min)";e={[Math]::Round(($_.ElapsedTime /60),0)}} | Sort-Object 'CPU(%)' -Descending | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-processorusage.csv"
+    Get-CimInstance Win32_Process -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},Name,Description,$CreationDate,ProcessID,ParentProcessID,ThreadCount,ExecutablePath,CommandLine,@{n="Owner";e={$_.GetOwner().Domain + " " + $_.GetOwner().User}} | Export-CSV -Path "$export_directory\$ComputerName-processes.csv" -NoTypeInformation
+    Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},@{n="Process Name";e={$_.Name}},@{n="PID";e={$_.IDProcess}},@{n="PPID";e={$_.CreatingProcessID}},@{n="CPU(%)";e={$_.PercentProcessorTime}},@{n="Memory_Usage(MB)";e={[Math]::Round(($_.workingSetPrivate /1mb),2)}},@{n="RunningTime(Min)";e={[Math]::Round(($_.ElapsedTime /60),0)}} | Sort-Object 'CPU(%)' -Descending | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-processorusage.csv"
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1165,7 +1165,7 @@ function Get-RemoteServicesActive($ComputerName,$Credential){
     CheckExportDir
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Services on $ComputerName" -StepNumber ($stepCounter++)
-    Get-CimInstance Win32_Service -CimSession $session | Select-Object Name,ProcessID,StartMode,State,Status,PathName | export-CSV -Path "$export_directory\$ComputerName-services.csv" -NoTypeInformation
+    Get-CimInstance Win32_Service -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},Name,ProcessID,StartMode,State,Status,PathName | export-CSV -Path "$export_directory\$ComputerName-services.csv" -NoTypeInformation
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1212,14 +1212,14 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
     $driveLetter = (Get-CimInstance win32_operatingsystem -CimSession $session | Select-Object -expand SystemDrive) + "\"
     $shell = ("cmd.exe /c " + $driveLetter + "windows\system32\")
     Write-ProgressHelper -StatusMessage "Retrieving specific host-based artifacts from $ComputerName" -StepNumber ($stepCounter++)
-    $fileList = @('net.csv','tasklist.csv','tasksvc.csv','driverquery.csv','dns.txt','arp.txt','sched.csv')
-    $outnet = ($driveLetter + ”net.csv”)
-    $outtasks = ($driveLetter + ”tasklist.csv")
-    $outtasksvc = ($driveLetter + ”tasksvc.csv")
+    $fileList = @('nets.csv','tasklists.csv','tasksvcs.csv','driverqueries.csv','dns.txt','arps.txt','scheds.csv')
+    $outnet = ($driveLetter + ”nets.csv”)
+    $outtasks = ($driveLetter + ”tasklists.csv")
+    $outtasksvc = ($driveLetter + ”tasksvcs.csv")
     $outdns = ($driveLetter + ”dns.txt")
-    $outdriver = ($driveLetter + ”driverquery.csv")
-    $outarp = ($driveLetter + ”arp.txt")
-    $outsched = ($driveLetter + ”sched.csv")
+    $outdriver = ($driveLetter + ”driverqueries.csv")
+    $outarp = ($driveLetter + ”arps.txt")
+    $outsched = ($driveLetter + ”scheds.csv")
 
     $artifacts = @{tasklist = "tasklist.exe /v /FO csv >> $outtasks"; tasksvc = "tasklist.exe /svc /FO csv >> $outtasksvc"; dns = "ipconfig.exe /displaydns >> $outdns"; driverquery = "driverquery.exe /v /FO csv >> $outdriver"; arp = "arp.exe -a >> $outarp"; sched = "schtasks.exe /Query /FO CSV /V >> $outsched"}
     Try{
@@ -1228,9 +1228,9 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         Write-ProgressHelper -StatusMessage " -$key" -StepNumber ($StepCounter++)
     }
     Invoke-CimMethod Win32_process -MethodName Create -Arguments @{CommandLine = "cmd.exe /c for /F `"tokens=1-5 delims= `" %A in ('netstat.exe -ano') do echo %A,%B,%C,%D,%E>>$outnet"} -CimSession $session -ErrorAction stop | Out-Null
-    Get-CimInstance win32_networkadapterconfiguration -CimSession $session | Select-Object PSComputerName,DNSHostName,Description,DNSDomain,MacAddress,@{n="IPv4";e={$_.IpAddress[0]}},@{n="IPv6";e={$_.IPAddress[1]}},@{n="IPv4Subnet";e={$_.IPSubnet[0]}},@{n="IPv6Subnet";e={$_.IPSubnet[1]}},DHCPServer,DHCPEnabled,@{n="DHCPLeaseObtained";e={$_.ConvertToDateTime($_.DHCPLeaseObtained)}},@{n="DHCPLeaseExpires";e={$_.ConvertToDateTime($_.DHCPLeaseExpires)}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-ipconfig.csv"
-    Get-CimInstance win32_service -CimSession $session | Select-Object Name,DisplayName,PathName,ServiceType,State,Status,InstallDate,StartMode,DelayedAutoStart,AcceptPause,AcceptStop,ErrorControl,ExitCode,ServiceSpecificExitCode | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-scquery.csv"
-    Get-CimInstance win32_ip4routeTable -CimSession $session | Select-Object PSComputerName,Name,Destination,Mask,NextHop,Metric1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-route.csv"
+    Get-CimInstance win32_networkadapterconfiguration -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},PSComputerName,DNSHostName,Description,DNSDomain,MacAddress,@{n="IPv4";e={$_.IpAddress[0]}},@{n="IPv6";e={$_.IPAddress[1]}},@{n="IPv4Subnet";e={$_.IPSubnet[0]}},@{n="IPv6Subnet";e={$_.IPSubnet[1]}},DHCPServer,DHCPEnabled,@{n="DHCPLeaseObtained";e={$_.ConvertToDateTime($_.DHCPLeaseObtained)}},@{n="DHCPLeaseExpires";e={$_.ConvertToDateTime($_.DHCPLeaseExpires)}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-ipconfig.csv"
+    Get-CimInstance win32_service -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},Name,DisplayName,PathName,ServiceType,State,Status,InstallDate,StartMode,DelayedAutoStart,AcceptPause,AcceptStop,ErrorControl,ExitCode,ServiceSpecificExitCode | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-scquery.csv"
+    Get-CimInstance win32_ip4routeTable -CimSession $session | Select-Object @{l="ComputerName";e={$ComputerName}},PSComputerName,Name,Destination,Mask,NextHop,Metric1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-route.csv"
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
     Catch{
@@ -1248,17 +1248,27 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         Remove-Item ($drivemount + ":\" + $file) -Force
         }
     Remove-PSDrive $drivemount
-    $taskheader = (Get-Content "$export_directory\$ComputerName-sched.csv" | Select -first 1)
-    $taskheader > "$export_directory\$ComputerName-scheduledtasks.csv"
-    Add-Content -Path "$export_directory\$ComputerName-scheduledtasks.csv" -Value (Get-Content "$export_directory\$ComputerName-sched.csv" | Select-string -pattern $taskheader -NotMatch)
-    Add-Content -Path "$export_directory\$ComputerName-netstat.csv" -Value ("Protocol,LocalAddress,ForeignAddress,State,PID")
-    Add-Content -Path "$export_directory\$ComputerName-netstat.csv" -Value (Get-Content "$export_directory\$ComputerName-net.csv" | Select -skip 2)
-    Remove-Item "$export_directory\$ComputerName-net.csv" -Force
-    Remove-Item "$export_directory\$ComputerName-sched.csv" -Force
-    $arp_data = (Get-Content "$export_directory\$ComputerName-arp.txt")
+    Import-CSV "$export_directory\$ComputerName-tasksvcs.csv" | Select-Object @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-tasksvc.csv"
+    Import-CSV "$export_directory\$ComputerName-tasklists.csv" | Select-Object @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-tasklist.csv"
+    Import-CSV "$export_directory\$ComputerName-driverqueries.csv" | Select-Object @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverquery.csv"
+    $taskheader = (Get-Content "$export_directory\$ComputerName-scheds.csv" | Select -first 1)
+    $schedcsv = ((Get-Content "$export_directory\$ComputerName-scheds.csv") -replace "$taskheader","" | Where {$_.trim() -ne ""})
+    Add-Content -Path "$export_directory\$ComputerName-scheduledtask.csv" -Value ($taskheader)
+    Add-Content -Path "$export_directory\$ComputerName-scheduledtask.csv" -value ($schedcsv)
+    Import-CSV "$export_directory\$ComputerName-scheduledtask.csv" | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-scheduledtasks.csv"
+    Remove-Item $export_directory\$ComputerName-scheduledtask.csv -Force
+    Add-Content -Path "$export_directory\$ComputerName-netstats.csv" -Value ("Protocol,LocalAddress,ForeignAddress,State,PID")
+    Add-Content -Path "$export_directory\$ComputerName-netstats.csv" -Value (Get-Content "$export_directory\$ComputerName-nets.csv" | Select -skip 2)
+    Import-CSV "$export_directory\$ComputerName-netstats.csv" | Select @{l="ComputerName";e={$ComputerName}},Protocol,LocalAddress,ForeignAddress,@{n="State";e={if($_.Protocol -like 'UDP*'){'N/A'}else{$_.State}}},@{n="PID";e={if($_.Protocol -like 'UDP*'){$_.State}else{$_.PID}}}  | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-netstat.csv"
+    Remove-Item "$export_directory\$ComputerName-nets.csv" -Force
+    Remove-Item "$export_directory\$ComputerName-scheds.csv" -Force
+    Remove-Item "$export_directory\$ComputerName-netstats.csv" -Force
+    $arp_data = (Get-Content "$export_directory\$ComputerName-arps.txt")
     $arp_header = ("InternetAddress,PhysicalAddress,Type")
-    $arp_header > "$export_directory\$ComputerName-arp.csv"
-    Add-Content -Path "$export_directory\$ComputerName-arp.csv" -Value (($arp_data) -replace ' +',' ' -replace '^ ','' -replace ' $','' -replace ' ',',' -replace '\r','' | ? {$_.trim() -ne ""} | Select-String -pattern 'Internet' -NotMatch)
+    Add-Content -Path "$export_directory\$ComputerName-arps.csv" -Value ($arp_header)
+    Add-Content -Path "$export_directory\$ComputerName-arps.csv" -Value (($arp_data) -replace ' +',' ' -replace '^ ','' -replace ' $','' -replace ' ',',' -replace '\r','' | ? {$_.trim() -ne ""} | Select-String -pattern 'Internet' -NotMatch)
+    Import-CSV "$export_directory\$ComputerName-arps.csv" | Select -skip 1 | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-arp.csv"
+    Remove-Item "$export_directory\$ComputerName-arps.csv" -Force
     $dns_client_cache = @() #Shared on StackOverflow by Adam - https://stackoverflow.com/questions/49678217/export-list-array-to-csv-in-powershell
     $raw_dns_data = (Get-Content "$export_directory\$ComputerName-dns.txt")
     for ($element = 3; $element -le $raw_dns_data.length - 3; $element++) {
@@ -1278,7 +1288,7 @@ function Get-RemoteArtifacts($ComputerName,$Credential){
         Add-Member -InputObject $dns_entry -MemberType NoteProperty -Name 'CNAMERecord' -Value $raw_dns_data[$element].Split(':')[1].Trim()
     }
 }
-    $dns_client_cache | Export-Csv "$export_directory\$ComputerName-dns.csv" -NoTypeInformation
+    $dns_client_cache | Select @{l="ComputerName";e={$ComputerName}}, * | Export-Csv "$export_directory\$ComputerName-dns.csv" -NoTypeInformation
     Write-ProgressHelper -StatusMessage "Host-based artifact acquisition complete" -StepNumber ($stepCounter++)
     }
     Catch [System.UnauthorizedAccessException] {
@@ -1417,7 +1427,7 @@ if ($AppCompatCache -ne $null) {
 				################################
 
 				# Parse the metadata for the entry and add to a custom object
-				$TempObject = "" | Select-Object -Property Name, Time, Data # Added Data
+				$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time, Data # Added Data
 				$BinReader.ReadBytes(4) | Out-Null
 				$SZ = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
 				$NameLength = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
@@ -1440,7 +1450,7 @@ if ($AppCompatCache -ne $null) {
 				################################
 
 				# Parse the metadata for the entry and add to a custom object
-				$TempObject = "" | Select-Object -Property Name, Time, Data # Added Data
+				$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time, Data # Added Data
 				$BinReader.ReadBytes(4) | Out-Null
 				$SZ = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
 				$NameLength = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
@@ -1472,7 +1482,7 @@ if ($AppCompatCache -ne $null) {
 					if ($EntryTag -eq "30307473" -or $EntryTag -eq "31307473") {
 						# Skip 4 Bytes
 						$BinReader.ReadBytes(4) | Out-Null
-						$TempObject = "" | Select-Object -Property Name, Time
+						$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time
 						$JMP = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
 						$SZ = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 						$TempObject.Name = $UnicodeEncoding.GetString($BinReader.ReadBytes($SZ + 2))
@@ -1520,7 +1530,7 @@ if ($AppCompatCache -ne $null) {
 				# Complete loop to parse each entry
 				while ($MemoryStream.Position -lt $MemoryStream.Length) {
 					#Parse the metadata for the entry and add to a custom object
-					$TempObject = "" | Select-Object -Property Name, Time
+					$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time
 
 					$JMP = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
 					$TempObject.Time = [DateTime]::FromFileTime([System.BitConverter]::ToUInt64($BinReader.ReadBytes(8),0)).ToString("G")
@@ -1529,7 +1539,7 @@ if ($AppCompatCache -ne $null) {
 					$EntryArray += $TempObject
 				}
 			}
-			$EntryArray | Select-Object -Property Name, Time | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
+			$EntryArray | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
 		}
 
 		# BADC0FEE in Little Endian Hex - Windows 7 / Windows 2008 R2
@@ -1555,7 +1565,7 @@ if ($AppCompatCache -ne $null) {
 					# Use the Number of Entries it says are available and iterate through this loop that many times
 					for ($i=0; $i -lt $NumberOfEntries; $i++) {
 						# Parse the metadata for the entry and add to a custom object
-						$TempObject = "" | Select-Object -Property Name, Length, MaxLength, Padding, Offset0, Offset1, Time, Flag0, Flag1
+						$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Length, MaxLength, Padding, Offset0, Offset1, Time, Flag0, Flag1
 						$TempObject.Length = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 						$TempObject.MaxLength = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 						$TempObject.Padding = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
@@ -1578,7 +1588,7 @@ if ($AppCompatCache -ne $null) {
 					# Use the Number of Entries it says are available and iterate through this loop that many times
 					for ($i=0; $i -lt $NumberOfEntries; $i++) {
 						# Parse the metadata for the entry and add to a custom object
-						$TempObject = "" | Select-Object -Property Name, Length, MaxLength, Offset, Time, Flag0, Flag1
+						$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Length, MaxLength, Offset, Time, Flag0, Flag1
 						$TempObject.Length = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 						$TempObject.MaxLength = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 						$TempObject.Offset = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
@@ -1598,7 +1608,7 @@ if ($AppCompatCache -ne $null) {
 			}
 
 			# Return a Table with the results.  I have to do this in the switch since not all OS versions will have the same interesting fields to return
-			$EntryArray | Select-Object -Property Name, Time, Flag0, Flag1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
+			$EntryArray | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time, Flag0, Flag1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
 		}
 
 		# BADC0FFE in Little Endian Hex - Windows Server 2003 through Windows Vista and Windows Server 2008
@@ -1618,7 +1628,7 @@ if ($AppCompatCache -ne $null) {
 				# Use the Number of Entries it says are available and iterate through this loop that many times
 				for ($i=0; $i -lt $NumberOfEntries; $i++) {
 					# Parse the metadata for the entry and add to a custom object
-					$TempObject = "" | Select-Object -Property Name, Length, MaxLength, Padding, Offset0, Offset1, Time, Flag0, Flag1
+					$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Length, MaxLength, Padding, Offset0, Offset1, Time, Flag0, Flag1
 					$TempObject.Length = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 					$TempObject.MaxLength = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 					$TempObject.Padding = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
@@ -1637,7 +1647,7 @@ if ($AppCompatCache -ne $null) {
 				# Use the Number of Entries it says are available and iterate through this loop that many times
 				for ($i=0; $i -lt $NumberOfEntries; $i++) {
 					# Parse the metadata for the entry and add to a custom object
-					$TempObject = "" | Select-Object -Property Name, Length, MaxLength, Offset, Time, Flag0, Flag1
+					$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Length, MaxLength, Offset, Time, Flag0, Flag1
 					$TempObject.Length = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 					$TempObject.MaxLength = [System.BitConverter]::ToUInt16($BinReader.ReadBytes(2),0)
 					$TempObject.Offset = [System.BitConverter]::ToUInt32($BinReader.ReadBytes(4),0)
@@ -1650,7 +1660,7 @@ if ($AppCompatCache -ne $null) {
 			}
 
 			# Return a Table with the results.  I have to do this in the switch since not all OS versions will have the same interesting fields to return
-			$EntryArray | Select-Object -Property Name, Time, Flag0, Flag1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
+			$EntryArray | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Time, Flag0, Flag1 | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
 		}
 
 
@@ -1665,7 +1675,7 @@ if ($AppCompatCache -ne $null) {
 			# Use the Number of Entries it says are available and iterate through this loop that many times
 			for ($i=0; $i -lt $NumberOfEntries; $i++) {
 				# Parse the metadata for the entry and add to a custom object
-				$TempObject = "" | Select-Object -Property Name, LastModifiedTime, Size, LastUpdatedTime
+				$TempObject = "" | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, LastModifiedTime, Size, LastUpdatedTime
 				$TempObject.Name = ($UnicodeEncoding.GetString($BinReader.ReadBytes(488))) -replace "\\\?\?\\",""
 				# We read 488 bytes into the Entry, and the next attribute of note starts at 528. Lets read those 40 bytes of difference and skip them
 				$Nothing = $BinReader.ReadBytes(40)
@@ -1677,7 +1687,7 @@ if ($AppCompatCache -ne $null) {
 			}
 
 			# Return a Table with the results.  I have to do this in the switch since not all OS versions will have the same interesting fields to return
-			$EntryArray | Select-Object -Property Name, Size, LastModifiedTime, LastUpdatedTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
+			$EntryArray | Select-Object -Property @{l="ComputerName";e={$ComputerName}},Name, Size, LastModifiedTime, LastUpdatedTime | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-appcompat.csv"
 		}
 	}
 }
@@ -1805,34 +1815,40 @@ function Get-RemoteUSB($ComputerName,$Credential){
     while (!(Test-Path ($drivemount + ":\drives.csv"))) {start-sleep -s 1}
 
     Write-ProgressHelper -StatusMessage "Copying generated artifacts from $ComputerName\$driveLetter"
-    Copy-Item ($drivemount + ":\volumes.csv") "$export_directory\$ComputerName-volumes.csv"
-    Copy-Item ($drivemount + ":\drives.csv") "$export_directory\$ComputerName-drives.csv"
+    Copy-Item ($drivemount + ":\volumes.csv") "$export_directory\$ComputerName-volume.csv"
+    Copy-Item ($drivemount + ":\drives.csv") "$export_directory\$ComputerName-drive.csv"
 
     Write-ProgressHelper -StatusMessage "Removing artifacts from $ComputerName\$driveLetter"
-    while (!(Test-Path ("$export_directory\$ComputerName-volumes.csv"))) {start-sleep -s 1}
+    while (!(Test-Path ("$export_directory\$ComputerName-volume.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\volumes.csv") -Force
-    while (!(Test-Path ("$export_directory\$ComputerName-drives.csv"))) {start-sleep -s 1}
+    while (!(Test-Path ("$export_directory\$ComputerName-drive.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\drives.csv") -Force
 
     Write-ProgressHelper -StatusMessage "Generating table of Drive Letters and Volumes from $ComputerName"
+    Import-CSV $export_directory\$ComputerName-drive.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-drives.csv
+    Import-CSV $export_directory\$ComputerName-volume.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-volumes.csv
+    Remove-Item $export_directory\$ComputerName-drive.csv -Force
+    Remove-Item $export_directory\$ComputerName-volume.csv -Force
     $Drives = (Import-CSV $export_directory\$ComputerName-drives.csv)
     $Volumes = (Import-CSV $export_directory\$ComputerName-volumes.csv)
-    Join-Object -Left $Drives -Right $Volumes -LeftJoinProperty KeyValue -RightJoinProperty KeyValue -Type AllInBoth | Select-Object Drive,Volume,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-volumes_and_drives.csv"
+    Join-Object -Left $Drives -Right $Volumes -LeftJoinProperty KeyValue -RightJoinProperty KeyValue -Type AllInBoth | Select-Object ComputerName,Drive,Volume,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-volumes_and_drives.csv"
 
     Write-ProgressHelper -StatusMessage "Getting User Mountpoints from each users NTUSER.DAT registry key on $ComputerName"
     Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + '(Get-ItemProperty \"HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\*\" | Where {$_.ProfileImagePath -notlike \"C:\windows*\"}| Select-Object @{n=\"UserName\";e={($_.ProfileImagePath -split \"\\\\\")[2]}}, @{n=\"SID\";e={$_.PSChildName}} | ForEach-Object {$SID = $_.SID; $UserName = $_.UserName; (Get-Item Registry::HKEY_USERS\$SID\Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2).GetSubKeyNames() -like \"{*\" } | Select-Object @{n=\"GUID\";e={$_}},@{l=\"UserName\";e={$UserName}}) | Export-CSV -NoTypeInformation \"$driveLetter\UserMountPoints.csv\"'} -CimSession $session -ErrorAction Stop | Out-Null
     Start-sleep -s 5
 
     Write-ProgressHelper -StatusMessage "Copying User Mountpoints artifacts from $ComputerName"
-    Copy-Item ($drivemount + ":\UserMountPoints.csv") "$export_directory\$ComputerName-usermounts.csv"
+    Copy-Item ($drivemount + ":\UserMountPoints.csv") "$export_directory\$ComputerName-usermount.csv"
 
     Write-ProgressHelper -StatusMessage "Removing artifact from $ComputerName"
     Remove-Item ($drivemount + ":\usermountpoints.csv") -Force
 
     Write-ProgressHelper -StatusMessage "Generating table of Drive Letters, Volumes, and Usernames who mounted them"
     $DriveVols = (Import-CSV "$export_directory\$ComputerName-volumes_and_drives.csv")
+    Import-CSV $export_directory\$ComputerName-usermount.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-usermounts.csv
+    Remove-Item $export_directory\$ComputerName-usermount.csv -Force
     $UserMounts = (Import-CSV "$export_directory\$ComputerName-usermounts.csv")
-    Join-Object -Left $DriveVols -Right $UserMounts -LeftJoinProperty Volume -RightJoinProperty GUID -Type AllInBoth | Select-Object Drive,GUID,Volume,UserName,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldrives.csv"
+    Join-Object -Left $DriveVols -Right $UserMounts -LeftJoinProperty Volume -RightJoinProperty GUID -Type AllInBoth | Select-Object ComputerName,Drive,GUID,Volume,UserName,ASCII,KeyValue | Sort-object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldrives.csv"
 
     Write-ProgressHelper -StatusMessage "Retrieving USBSTOR and WpdBusEnum information from $ComputerName to get volume names"
     Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine = $powershell + ('Get-ItemProperty HKLM:\System\CurrentControlSet\Enum\USBSTOR\*\* | Select-Object @{n=\"Serial\";e={($_.PSChildName -replace \"&[0-9]$\",\"\")}},@{n=\"Device\";e={$_.FriendlyName}},ContainerID,@{n=\"HardwareID\";e={($_.HardwareID)[0]}},@{n=\"Vendor_Product\";e={($_.PSParentPath -split \"\\\\\")[6]}} | Export-CSV -NoTypeInformation \"$driveLetter\usbstor.csv\"')} -CimSession $session -ErrorAction Stop | Out-Null
@@ -1841,34 +1857,38 @@ function Get-RemoteUSB($ComputerName,$Credential){
     while (!(Test-Path ($drivemount + ":\wpdenum.csv"))) {start-sleep -s 1}
 
     Write-ProgressHelper -StatusMessage "Retrieving artifacts from $ComputerName"
-    Copy-Item ($drivemount + ":\usbstor.csv") ("$export_directory\$ComputerName-usbstor.csv")
-    Copy-Item ($drivemount + ":\wpdenum.csv") ("$export_directory\$ComputerName-wpdenum.csv")
+    Copy-Item ($drivemount + ":\usbstor.csv") ("$export_directory\$ComputerName-usbstors.csv")
+    Copy-Item ($drivemount + ":\wpdenum.csv") ("$export_directory\$ComputerName-wpdenums.csv")
     Start-Sleep -s 5
 
     Write-ProgressHelper -StatusMessage "Removing generated artifacts from $ComputerName"
-    while (!(Test-Path ("$export_directory\$ComputerName-usbstor.csv"))) {start-sleep -s 1}
+    while (!(Test-Path ("$export_directory\$ComputerName-usbstors.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\usbstor.csv") -Force
-    while (!(Test-Path ("$export_directory\$ComputerName-wpdenum.csv"))) {start-sleep -s 1}
+    while (!(Test-Path ("$export_directory\$ComputerName-wpdenums.csv"))) {start-sleep -s 1}
     Remove-Item ($drivemount + ":\wpdenum.csv") -Force
 
     Write-ProgressHelper -StatusMessage "Generating table containing all USB drive information from registry from $ComputerName"
+    Import-CSV $export_directory\$ComputerName-usbstors.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-usbstor.csv
+    Import-CSV $export_directory\$ComputerName-wpdenums.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-wpdenum.csv
+    Remove-Item $export_directory\$ComputerName-usbstors.csv -Force
+    Remove-Item $export_directory\$ComputerName-wpdenums.csv -Force
     $usbtable = (Import-CSV $export_directory\$ComputerName-usbstor.csv)
     $wpdtable = (Import-CSV $export_directory\$ComputerName-wpdenum.csv)
-    Join-Object -Left $wpdtable -Right $usbtable -LeftJoinProperty ContainerID -RightJoinProperty ContainerID -Type AllInBoth  | Select-Object Device,FriendlyName,Serial,HardwareID,Vendor_Product,ContainerID | Sort-Object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driveinfo.csv"
+    Join-Object -Left $wpdtable -Right $usbtable -LeftJoinProperty ContainerID -RightJoinProperty ContainerID -Type AllInBoth  | Select-Object ComputerName,Device,FriendlyName,Serial,HardwareID,Vendor_Product,ContainerID | Sort-Object Device | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driveinfo.csv"
 
     Write-ProgressHelper -StatusMessage "Retrieving setupapi.dev.log from $ComputerName"
     Copy-Item ($drivemount + ":\Windows\inf\setupapi.dev.log") ("$export_directory\$ComputerName-setupapi.dev.log")
     Start-sleep -s 2
 
     Write-ProgressHelper -StatusMessage "Grabbing First and Last Insert Dates for all USB devices discovered using setupapi.dev.log and Windows Event Logs from $ComputerName"
-    Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverframeworks.csv"
+    Get-WinEvent -ComputerName $ComputerName @credsplat @{LogName = "Microsoft-Windows-DriverFrameworks-UserMode/Operational"} | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-driverframeworks.csv"
     $driveinfo = Import-CSV $export_directory\$ComputerName-driveinfo.csv
     $driver = Import-CSV $export_directory\$ComputerName-driverframeworks.csv
-    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $lastremoved = ($driver | Where {$_.Id -eq '2100' -and $_.message -like "*(27, 2)*" -and $_.message -match "$Serial"}).TimeCreated; $driver | Where-Object {$_.message -match "$Serial" -and $_.Id -eq '2003'} | Select-Object @{n="LastInsert";e={$_.TimeCreated}}, @{n="LastRemoved";e={$lastremoved}},ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}}  | Sort-Object Serial -desc} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
-    $driveinfo | Select-Object Serial | ForEach-object {$Serial = $_.Serial; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | Select-string $serial -SimpleMatch -Context 0,1 | Select @{n="FirstInsert";e={[datetime](($_.Context.PostContext[0]) -replace ">>>  Section Start ","")}}, @{n="Device";e={($_.Line) -replace ">>>  \[Device\ Install\ \(Hardware\ initiated\)\ -\ ","" -replace "\]",""}}, @{n="Serial";e={$serial}}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbfirstinsert.csv"
+    $driveinfo | Select-Object Serial | ForEach-Object {$Serial = $_.Serial ; $lastremoved = ($driver | Where {$_.Id -eq '2100' -and $_.message -like "*(27, 2)*" -and $_.message -match "$Serial"}).TimeCreated; $driver | Where-Object {$_.message -match "$Serial" -and $_.Id -eq '2003'} | Select-Object ComputerName,@{n="LastInsert";e={$_.TimeCreated}}, @{n="LastRemoved";e={$lastremoved}},ID, OpCodeDisplayName, UserID, Message, @{n="Serial";e={$Serial}}  | Sort-Object Serial -desc} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usblastinsert.csv"
+    $driveinfo | Select-Object Serial | ForEach-object {$Serial = $_.Serial; Get-Content "$export_directory\$ComputerName-setupapi.dev.log" | Select-string $serial -SimpleMatch -Context 0,1 | Select @{l="ComputerName";e={$ComputerName}},@{n="FirstInsert";e={[datetime](($_.Context.PostContext[0]) -replace ">>>  Section Start ","")}}, @{n="Device";e={($_.Line) -replace ">>>  \[Device\ Install\ \(Hardware\ initiated\)\ -\ ","" -replace "\]",""}}, @{n="Serial";e={$serial}}} | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbfirstinsert.csv"
     $lastInsert = Import-CSV $export_directory\$ComputerName-usblastinsert.csv
     $firstInsert = Import-CSV $export_directory\$ComputerName-usbfirstinsert.csv
-    Join-Object -left $firstInsert -right $lastInsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | select Device, FirstInsert, LastInsert, LastRemoved, Serial, OpCodeDisplayName,UserID,Message,ID | Sort-Object Device -desc -Unique | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinserttimes.csv"
+    Join-Object -left $firstInsert -right $lastInsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | select ComputerName,Device, FirstInsert, LastInsert, LastRemoved, Serial, OpCodeDisplayName,UserID,Message,ID | Sort-Object Device -desc -Unique | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbinserttimes.csv"
 
     <# No longer necessary, retrieve from USB via LastWrite
     Write-ProgressHelper -StatusMessage "Grabbing VID/PID of USB devices from $ComputerName"
@@ -1884,25 +1904,27 @@ function Get-RemoteUSB($ComputerName,$Credential){
     Write-ProgressHelper -StatusMessage "Getting USB First Insert and USBSTOR Key Last Write Times"
     Get-RemoteUSBLastWrite $ComputerName @credsplat
     Start-sleep -s 3
-    Copy-Item ($drivemount + ":\usblastwrite.csv") ("$export_directory\$ComputerName-usblastwrite.csv")
+    Copy-Item ($drivemount + ":\usblastwrite.csv") ("$export_directory\$ComputerName-usblastwrites.csv")
+    Import-CSV $export_directory\$ComputerName-usblastwrites.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-usblastwrite.csv
+    Remove-Item $export_directory\$ComputerName-usblastwrites.csv -Force
     $lastwrite = (Import-CSV $export_directory\$ComputerName-usblastwrite.csv)
-    Copy-Item ($drivemount + ":\usbfirstsincereboot.csv") ("$export_directory\$ComputerName-usbfirstsincereboot.csv")
+    Copy-Item ($drivemount + ":\usbfirstsincereboot.csv") ("$export_directory\$ComputerName-usbfirstsincereboots.csv")
+    Import-CSV $export_directory\$ComputerName-usbfirstsincereboots.csv | Select @{l="ComputerName";e={$ComputerName}},* | Export-CSV -NoTypeInformation $export_directory\$ComputerName-usbfirstsincereboot.csv
+    Remove-Item $export_directory\$ComputerName-usbfirstsincereboots.csv -Force
     $firstsince = (Import-CSV $export_directory\$ComputerName-usbfirstsincereboot.csv)
-    Join-Object -Left $lastwrite -right $firstsince -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select @{n="VID_PID";e={$_.Device}},Serial,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbwritetimes.csv"
+    Join-Object -Left $lastwrite -right $firstsince -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select ComputerName,VID_PID,Serial,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-usbwritetimes.csv"
     $writetimes = (Import-CSV $export_directory\$ComputerName-usbwritetimes.csv)
-    Join-Object -Left $driveinfo -Right $writetimes -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | Select Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
+    Join-Object -Left $driveinfo -Right $writetimes -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInLeft | Select ComputerName,Device, FriendlyName, Serial, HardwareID, Vendor_Product,ContainerID,FirstInsertSinceReboot,LastWrite | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv"
     Remove-Item ($drivemount + ":\usblastwrite.csv") -Force
     Remove-Item ($drivemount + ":\usbfirstsincereboot.csv") -Force
-    <#$alldriveinfo = Import-CSV $export_directory\$ComputerName-alldriveinfo.csv
-    Join-Object -Left $alldriveinfo -Right $usbvidpid -LeftJoinProperty ContainerID -RightJoinProperty ContainerID -Type AllInLeft | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-alldriveinfo.csv" #>
     $usbinsert = Import-CSV $export_directory\$ComputerName-usbinserttimes.csv
     $alldriveinfo = Import-CSV $export_directory\$ComputerName-alldriveinfo.csv
-    Join-Object -left $alldriveinfo -right $usbinsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select Device, FriendlyName,Serial,HardWareID,Vendor_Product,VID_PID,ContainerID,FirstInsert,@{n="FirstInsertSinceReboot";e={[datetime]$_.FirstInsertSinceReboot}},LastInsert,@{n="LastWrite";e={[datetime]$_.LastWrite}},LastRemoved | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-finaldriveinfo.csv"
+    Join-Object -left $alldriveinfo -right $usbinsert -LeftJoinProperty Serial -RightJoinProperty Serial -Type AllInBoth | Select ComputerName,Device, FriendlyName,Serial,HardWareID,Vendor_Product,VID_PID,ContainerID,FirstInsert,@{n="FirstInsertSinceReboot";e={[datetime]$_.FirstInsertSinceReboot}},LastInsert,@{n="LastWrite";e={[datetime]$_.LastWrite}},LastRemoved | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-finaldriveinfo.csv"
 
     Write-ProgressHelper -StatusMessage "Combining all USB Registry Information together"
-    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&[0-9]$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
+    $alldrives = (Import-CSV $export_directory\$ComputerName-alldrives.csv | Select-Object ComputerName,Drive,GUID,Volume,UserName,@{n="DeviceSerial";e={((($_.ASCII) -split "\#")[2]) -replace "&[0-9]$",""}},ASCII,@{n="DeviceType";e={(($_.ASCII) -split "\#")[1]}},KeyValue)
     $finaldriveinfo = (Import-CSV $export_directory\$ComputerName-finaldriveinfo.csv)
-    Join-Object -Left $finaldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,VID_PID,KeyValue,ASCII,FirstInsert,FirstInsertSinceReboot,LastInsert,LastWrite,LastRemoved | Sort-Object Drive -Descending | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-device_info.csv"
+    Join-Object -Left $finaldriveinfo -right $alldrives -LeftJoinProperty Serial -RightJoinProperty DeviceSerial -Type AllInBoth | Select-Object ComputerName,Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,GUID,Volume,HardwareID,Vendor_Product,VID_PID,KeyValue,ASCII,FirstInsert,FirstInsertSinceReboot,LastInsert,LastWrite,LastRemoved | Sort-Object Drive -Descending | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-device_info.csv"
     #Grab the USB information from the host and put it in the Basic Info HTML file for quick reference
 
     Import-CSV $export_directory\$ComputerName-device_info.csv | Select-Object Drive,Device,FriendlyName,DeviceType,Serial,DeviceSerial,UserName,Guid,Volume,FirstInsert,FirstInsertSinceReboot,LastInsert,LastWrite,LastRemoved | ConvertTo-HTML -Head $htmlHeader -Body "<h2>USB Registry Information</h2>"  >> $export_directory\$ComputerName-basicinfo.html
@@ -2050,7 +2072,7 @@ function Get-RemoteRecentFiles($ComputerName,$Credential){
     $session = New-CimSession -ComputerName $ComputerName @credsplat -SessionOption $option
     Write-ProgressHelper -StatusMessage "Checking Remote Users Recent Files" -StepNumber ($stepCounter++)
     $RemoteUsers = (Get-CimInstance win32_userprofile -CimSession $session).LocalPath | Where-Object {$_ -like "*Users*"}
-        ForEach ($UserFolder in $RemoteUsers){$UserFolder = ($UserFolder -split "\\")[-1]; Get-CimInstance cim_datafile -CimSession $session -Filter ('drive="c:" AND path="\\Users\\' + $UserFolder + '\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\"') | Select-Object @{l="UserName";e={$UserFolder}},@{n="FileName";e={($_.Name -split "\\")[-1]}},CreationDate,InstallDate,LastAccessed,LastModified| Export-CSV -NoTypeInformation -Append "$export_directory\$ComputerName-RecentFiles.csv"
+        ForEach ($UserFolder in $RemoteUsers){$UserFolder = ($UserFolder -split "\\")[-1]; Get-CimInstance cim_datafile -CimSession $session -Filter ('drive="c:" AND path="\\Users\\' + $UserFolder + '\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\"') | Select-Object @{l="ComputerName";e={$ComputerName}},@{l="UserName";e={$UserFolder}},@{n="FileName";e={($_.Name -split "\\")[-1]}},CreationDate,InstallDate,LastAccessed,LastModified| Export-CSV -NoTypeInformation -Append "$export_directory\$ComputerName-RecentFiles.csv"
         }
     Remove-CimSession -ComputerName $ComputerName | Out-Null
     }
@@ -2210,8 +2232,6 @@ param($ComputerName,[ValidateNotNullOrEmpty()]$Credential,[Parameter(Mandatory=$
     Write-ProgressHelper -StatusMessage "Capture started - will complete in $Timespan seconds" -StepNumber ($stepCounter++)
     foreach ($second in (1..$Timespan)){$Multiplier = (100 / $Timespan); Write-Progress -Id 1 -Activity $Message -Status "$($Timespan - $second) seconds remaining" -PercentComplete (($Timespan - $second) * $Multiplier) ; start-sleep -s 1 }
     Write-Progress -Activity 'Completed' -Completed -Id 1
-    #Write-Output "Capture started - will complete in $Timespan seconds"
-    #Start-Sleep -s $Timespan
     Write-Output "Capture time met - stopping capture"
     Write-ProgressHelper -StatusMessage "Capture time met - stopping capture" -StepNumber ($stepCounter++)
     Invoke-CimMethod win32_process -MethodName Create -Arguments @{CommandLine=$netstop} -CimSession $session -ErrorAction SilentlyContinue | Out-Null
@@ -2225,10 +2245,11 @@ param($ComputerName,[ValidateNotNullOrEmpty()]$Credential,[Parameter(Mandatory=$
     Remove-Item ("$drivemount`:\$cabfile") -Force
     Write-ProgressHelper -StatusMessage "Copy Complete" -StepNumber ($stepCounter++)
     Write-Output "Copy Complete"
-    Remove-PSDrive $drivemount
+    Remove-PSDrive $drivemount | Out-Null
     Write-ProgressHelper -StatusMessage "Converting trace to CSV" -StepNumber ($stepCounter++)
     Write-Output "Converting trace to CSV"
     & netsh trace convert input="$export_directory\$filename" output="$export_directory\$filename.csv" dump=CSV| Out-Null
+    Get-WinEvent -Path "$export_directory\$filename" -oldest | Select @{l="ComputerName";e={$ComputerName}},TimeCreated, @{n='PID';e={$udppid = $_.Message -match '.*PID = (\d+).*'; $ipv6pid = $_.Message -match '.*PID=(\d+).*'; if($_.Message -like 'TCP*' -and $_.Message -like '*PID =*'){$_.Properties[6].Value}elseif($_.Message -like 'TCP*' -and $ipv6pid){($ipv6pid = $matches[1])}elseif($_.Message -like 'UDP*' -and $udppid){($udppid = $matches[1])}else {'N/A'}}}, @{n="State";e={if($_.Message -like '*State =*'){($_.Message -split ' ')[8] -replace '\.',''}else{'N/A'}}}, @{n='Local IP and PORT';e={if ($_.Message -like 'TCP*' -and $_.Message -like '*local=*'){($_.Message -split ' ')[3] -replace '\(local=',''}elseif($_.Message -like 'UDP*' -and $_.Message -like '*LocalAddress =*'){($_.message -split ' ')[5] -replace ',',''}else{'N/A'}}}, @{n='Remote IP and Port';e={if ($_.Message -like 'TCP*' -and $_.Message -like '*remote=*'){($_.Message -split ' ')[4] -replace '\)','' -replace 'remote=',''}elseif($_.Message -like 'UDP*' -and $_.Message -like '*RemoteAddress*'){($_.Message -split ' ')[8] -replace '\)',''}else{'N/A'}}}, @{n='NDIS: IPv4';e={if ($_.Message -like '*IP Address =*'){($_.Message -split ' ')[16]}else{'N/A'}}},@{n='NDIS: IPv6';e={if ($_.Message -like '*IPv6 address =*'){($_.Message -split ' ')[23] -replace '\.',''}else{'N/A'}}}, Message | Export-CSV -NoTypeInformation "$export_directory\$ComputerName-netinfo.csv"
     Write-Output "Conversion complete"
     Write-ProgressHelper -StatusMessage "Conversion complete" -StepNumber ($stepCounter++)
     Remove-CimSession -ComputerName $ComputerName | Out-Null
